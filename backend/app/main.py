@@ -1,4 +1,6 @@
 from collections.abc import Callable
+from datetime import datetime
+from decimal import Decimal
 import re
 from typing import Any
 from uuid import UUID
@@ -300,6 +302,51 @@ async def list_verified_product_fitments(product_id: UUID) -> dict[str, Any]:
 class CatalogMutation(BaseModel):
     action: str = Field(min_length=1, max_length=40)
     product_id: UUID | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class SupplierOnboarding(BaseModel):
+    legal_name: str = Field(min_length=2, max_length=200)
+    display_name: str = Field(min_length=2, max_length=160)
+    supplier_type: str = Field(default="supplier", min_length=1, max_length=40)
+    contact_name: str | None = Field(default=None, max_length=160)
+    contact_email: str | None = Field(default=None, max_length=254)
+    contact_phone: str | None = Field(default=None, max_length=40)
+    business_registration_number: str | None = Field(default=None, max_length=100)
+    website_url: str | None = Field(default=None, max_length=500)
+    address: dict[str, Any] = Field(default_factory=dict)
+
+
+class SupplierDocumentRegistration(BaseModel):
+    document_type: str = Field(min_length=1, max_length=40)
+    storage_path: str = Field(min_length=1, max_length=1024)
+    original_filename: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=100)
+    file_size_bytes: int = Field(ge=1, le=10485760)
+    sha256: str | None = Field(default=None, pattern=r"^[a-fA-F0-9]{64}$")
+    expires_at: datetime | None = None
+
+
+class SupplierOfferSubmission(BaseModel):
+    product_id: UUID | None = None
+    supplier_sku: str | None = Field(default=None, max_length=160)
+    source_url: str | None = Field(default=None, max_length=2048)
+    source_evidence: dict[str, Any] = Field(min_length=1)
+    condition: str = Field(min_length=1, max_length=40)
+    unit_cost: Decimal = Field(ge=0)
+    asking_price: Decimal | None = Field(default=None, ge=0)
+    stock_quantity: int = Field(ge=0)
+    quote_expires_at: datetime
+    lead_time_days: int = Field(default=0, ge=0, le=365)
+    minimum_order_quantity: int = Field(default=1, ge=1, le=1000000)
+    warranty_days: int = Field(default=0, ge=0, le=3650)
+
+
+class SupplierAdminMutation(BaseModel):
+    action: str = Field(min_length=1, max_length=40)
+    supplier_id: UUID | None = None
+    offer_id: UUID | None = None
+    document_id: UUID | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
