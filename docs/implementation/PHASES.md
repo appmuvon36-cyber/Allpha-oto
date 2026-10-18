@@ -32,12 +32,16 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 - Real active-user role tests, end-to-end session/RLS checks and final production authorization matrix are explicitly deferred to Phase 12 when real test accounts and valid sessions are available.
 - Privileged operations stay in backend; no service-role key in client. Do not weaken existing RLS.
 
-## Phase 05 — Catalog and fitment (READ API + ADMIN REVIEW WORKSPACE BASELINE; MUTATION LIFECYCLE REMAINS)
-- \`GET /v1/catalog/products\`: published-only search, category, condition, part-number, limit and offset filters.
-- \`GET /v1/vehicles/makes\`, \`/v1/vehicles/models\`, \`/v1/vehicles/variants\`: active vehicle taxonomy reads.
-- \`GET /v1/catalog/products/{product_id}/fitments\`: verified fitments only, joined to vehicle variant/model/make; current RLS remains the source of access control.
-- \`GET /v1/admin/products\`: role-gated staff catalog read.
-- Remaining: staff create/edit/review/approve/publish/reject/archive lifecycle; fitment evidence capture and reviewer workflow; product image ownership/licence evidence; wire the web/admin screens to these APIs. Add only additive schema changes if required after checking the live schema. No unverified fitment may be presented as verified.
+## Phase 05 — Catalog and fitment (IMPLEMENTED BASELINE; LIVE AUTHENTICATED TRANSACTION QA BLOCKED)
+- `GET /v1/catalog/products`: published-only search, category, condition, part-number, variant fitment, limit and offset filters.
+- `GET /v1/vehicles/makes`, `/v1/vehicles/models`, `/v1/vehicles/variants`: active vehicle taxonomy reads.
+- `GET /v1/catalog/products/{product_id}/fitments`: verified fitments only; `GET /v1/admin/catalog/fitments` exposes staff fitment review data under staff RBAC.
+- `GET /v1/admin/products`: role-gated staff catalog read.
+- `POST /v1/admin/catalog/mutations`: caller JWT, allowlisted lifecycle actions, required `Idempotency-Key`, safe error mapping, and one Supabase RPC for mutation plus audit in a transaction.
+- `public.oto_catalog_mutate` enforces active staff profile/role, role-specific lifecycle transitions, fitment evidence for verification, and publication requirements. The audit index is unique per actor/request ID; transaction-scoped advisory locking serializes concurrent retries and replay responses mark `replayed=true`.
+- Web search and vehicle selectors call FastAPI; Admin workspace includes product lifecycle and fitment action controls. Admin deployment `e4dec1a0`, Web deployment `3f25e326`, and API deployment `3f25e326` were observed SUCCESS. Public HTTP smoke checks pass; unauthenticated staff endpoints return 401 and Web-origin CORS preflight returns 200.
+- Focused backend contract suite: 15 tests passed in an isolated runtime. Live schema introspection confirms mutation/audit columns, enum labels, fitment uniqueness constraint, RLS policies, and RPC execute grants. Products, fitments, audit logs, profiles and active staff profiles were all observed at zero rows.
+- Remaining before Phase 05 closure: authenticated transactional integration test for create/update/lifecycle + audit atomicity, replay and concurrent retries; verify audit row contents and rollback on forced audit failure using a non-production test fixture or dedicated test environment. No staff profile exists in production and no test user/data was created, so these checks are explicitly NOT claimed as passed. Product image ownership/licence evidence remains a workflow follow-up. Real-user session/RLS/E2E matrix remains deferred to Phase 12.
 
 ## Phase 06 — Supplier and sourcing (NOT IMPLEMENTED)
 - Supplier verification, source evidence, quote validity, stock timestamp, acquisition cost and lead time.
