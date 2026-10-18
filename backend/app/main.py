@@ -3,8 +3,8 @@ from typing import Any
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 settings = Settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.2.0",
+    version="0.3.0",
     docs_url=None if settings.environment.lower() == "production" else "/docs",
     redoc_url=None,
 )
@@ -43,10 +43,7 @@ def require_supabase_configuration() -> tuple[str, str]:
     url = settings.supabase_url.rstrip("/")
     key = settings.supabase_anon_key
     if not url or not key:
-        raise HTTPException(
-            status_code=503,
-            detail="Supabase Auth is not configured on the API service.",
-        )
+        raise HTTPException(status_code=503, detail="Supabase Auth is not configured on the API service.")
     return url, key
 
 
@@ -58,10 +55,8 @@ async def get_current_identity(
         raise HTTPException(status_code=401, detail="Bearer access token required.")
 
     supabase_url, anon_key = require_supabase_configuration()
-    headers = {
-        "apikey": anon_key,
-        "Authorization": f"Bearer {credentials.credentials}",
-    }
+    access_token = credentials.credentials
+    headers = {"apikey": anon_key, "Authorization": f"Bearer {access_token}"}
 
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
@@ -80,11 +75,7 @@ async def get_current_identity(
 
             profile_response = await client.get(
                 f"{supabase_url}/rest/v1/user_profiles",
-                params={
-                    "id": f"eq.{user_id}",
-                    "select": "id,display_name,phone,role,is_active",
-                    "limit": "1",
-                },
+                params={"id": f"eq.{user_id}", "select": "id,display_name,phone,role,is_active", "limit": "1"},
                 headers={**headers, "Accept": "application/json"},
             )
             if profile_response.status_code in (401, 403):
@@ -105,8 +96,10 @@ async def get_current_identity(
             return {
                 "user": {"id": user_id, "email": auth_user.get("email")},
                 "profile": profile,
-                # A missing profile has no role and never grants elevated access.
+                # Missing profiles never grant elevated access.
                 "role": profile.get("role") if profile else None,
+                # Internal only: never include this value in API response bodies.
+                "_access_token": access_token,
             }
     except HTTPException:
         raise
@@ -117,7 +110,7 @@ async def get_current_identity(
 
 
 def require_roles(*allowed_roles: str) -> Callable[..., Any]:
-    """Build a reusable FastAPI dependency for active profiles with explicit roles."""
+    """Require an active profile and an explicit allowlisted role."""
     normalized_roles = frozenset(role.strip().lower() for role in allowed_roles if role.strip())
     if not normalized_roles:
         raise ValueError("require_roles needs at least one non-empty role.")
@@ -126,10 +119,8 @@ def require_roles(*allowed_roles: str) -> Callable[..., Any]:
         identity: dict[str, Any] = Depends(get_current_identity),
     ) -> dict[str, Any]:
         profile = identity.get("profile")
-        if not isinstance(profile, dict):
-            raise HTTPException(status_code=403, detail="An active user profile is required.")
-        if profile.get("is_active") is not True:
-            raise HTTPException(status_code=403, detail="This account is inactive or not provisioned.")
+        if not isinstance(profile, dict) or profile.get("is_active") is not True:
+            raise HTTPException(status_code=403, detail="An active, provisioned user profile is required.")
         role = profile.get("role")
         if not isinstance(role, str) or role.strip().lower() not in normalized_roles:
             raise HTTPException(status_code=403, detail="Your role is not allowed to perform this action.")
@@ -150,7 +141,7 @@ async def readiness() -> dict[str, str]:
             status_code=503,
             detail="configuration-required: set SUPABASE_URL and SUPABASE_ANON_KEY",
         )
-    # This checks configuration only, not database connectivity or full business readiness.
+    # Configuration-only readiness; this does not claim a database connectivity check.
     return {"status": "configured", "service": "otoclinic-api"}
 
 
@@ -158,5 +149,46 @@ async def readiness() -> dict[str, str]:
 async def get_current_user(
     identity: dict[str, Any] = Depends(get_current_identity),
 ) -> dict[str, Any]:
-    """Return the authenticated user's own identity/profile for any user category."""
-    return identity
+    """Return the verified user's identity/profile for any active user category."""
+    return {key: value for key, value in identity.items() if not key.startswith("_")}
+
+
+@app.get("/v1/admin/products", tags=["catalog"])
+async def list_admin_products(
+    identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "moderator")),
+) -> dict[str, Any]:
+    """Read real catalog rows for authorized staff; Supabase RLS remains authoritative."""
+    supabase_url, anon_key = require_supabase_configuration()
+    headers = {
+        "apikey": anon_key,
+        "Authorization": f"Bearer {identity['_access_token']}",
+        "Accept": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.get(
+                f"{supabase_url}/rest/v1/products",
+                params={
+                    "select": "id,sku,slug,name,description,brand,part_number,category,condition,status,currency,retail_price,created_at,updated_at",
+                    "order": "created_at.desc",
+                    "limit": "100",
+                },
+                headers=headers,
+            )
+            if response.status_code in (401, 403):
+                # Do not turn an RLS/permission failure into a successful empty catalog.
+                raise HTTPException(status_code=503, detail="Catalog access is unavailable under current database policies.")
+            if response.status_code == 429 or response.status_code >= 500:
+                raise HTTPException(status_code=503, detail="Catalog service is temporarily unavailable.")
+            if response.status_code != 200:
+                raise HTTPException(status_code=503, detail="Catalog query failed.")
+            rows = response.json()
+            if not isinstance(rows, list):
+                raise HTTPException(status_code=503, detail="Catalog service returned an invalid response.")
+            return {"items": rows, "count": len(rows), "limit": 100}
+    except HTTPException:
+        raise
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail="Catalog request timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Could not reach the catalog service.") from exc
