@@ -425,6 +425,7 @@ async def supabase_supplier_rpc(
         "oto_supplier_document_register",
         "oto_supplier_offer_submit",
         "oto_supplier_admin_mutate",
+        "oto_supplier_offer_match_candidates",
     }
     if function_name not in allowed_functions:
         raise HTTPException(status_code=422, detail="Unsupported supplier operation.")
@@ -724,6 +725,19 @@ async def list_admin_supplier_documents(
     return {"items": rows, "count": len(rows), "limit": 200}
 
 
+@app.get("/v1/admin/supplier-offers/{offer_id}/candidates", tags=["supplier"])
+async def match_supplier_offer_candidates(
+    offer_id: UUID,
+    identity: dict[str, Any] = Depends(require_roles("admin", "moderator", "catalog_editor", "inventory_manager")),
+) -> dict[str, Any]:
+    result = await supabase_supplier_rpc(
+        "oto_supplier_offer_match_candidates",
+        {"p_offer_id": str(offer_id)},
+        identity["_access_token"],
+    )
+    return {"result": result}
+
+
 @app.post("/v1/admin/supplier-mutations", tags=["supplier"])
 async def mutate_supplier_operations(
     mutation: SupplierAdminMutation = Body(...),
@@ -732,7 +746,7 @@ async def mutate_supplier_operations(
 ) -> dict[str, Any]:
     allowed = {
         "approve_supplier", "reject_supplier", "suspend_supplier",
-        "review_supplier_document", "approve_offer", "reject_offer", "expire_offer",
+        "review_supplier_document", "approve_offer", "reject_offer", "expire_offer", "match_offer_product",
     }
     if mutation.action not in allowed:
         raise HTTPException(status_code=422, detail="Unsupported supplier action.")
