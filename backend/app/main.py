@@ -605,7 +605,7 @@ async def list_supplier_documents(
 async def register_supplier_document(
     request: SupplierDocumentRegistration = Body(...),
     idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
-    identity: dict[str, Any] = Depends(get_current_identity),
+    identity: dict[str, Any] = Depends(require_active_profile),
 ) -> dict[str, Any]:
     supplier = await get_owned_supplier(identity)
     payload = request.model_dump(mode="json", exclude_none=True)
@@ -619,7 +619,7 @@ async def register_supplier_document(
 
 @app.get("/v1/supplier/offers", tags=["supplier"])
 async def list_supplier_offers(
-    identity: dict[str, Any] = Depends(get_current_identity),
+    identity: dict[str, Any] = Depends(require_active_profile),
 ) -> dict[str, Any]:
     supplier = await get_owned_supplier(identity)
     rows = await supabase_get(
@@ -639,7 +639,7 @@ async def list_supplier_offers(
 async def submit_supplier_offer(
     request: SupplierOfferSubmission = Body(...),
     idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
-    identity: dict[str, Any] = Depends(get_current_identity),
+    identity: dict[str, Any] = Depends(require_active_profile),
 ) -> dict[str, Any]:
     supplier = await get_owned_supplier(identity)
     payload = request.model_dump(mode="json", exclude_none=True)
