@@ -1,0 +1,9 @@
+"use client";
+import {useEffect,useState} from "react";
+import {Download,Smartphone,X} from "lucide-react";
+type InstallEvent=Event&{prompt:()=>Promise<void>;userChoice:Promise<{outcome:"accepted"|"dismissed";platform:string}>};
+export function PwaInstallPrompt(){const [promptEvent,setPromptEvent]=useState<InstallEvent|null>(null);const [help,setHelp]=useState(false);const [installed,setInstalled]=useState(false);
+useEffect(()=>{const before=(e:Event)=>{e.preventDefault();setPromptEvent(e as InstallEvent)};const done=()=>{setInstalled(true);setHelp(false)};if(window.matchMedia("(display-mode: standalone)").matches||(navigator as Navigator&{standalone?:boolean}).standalone)setInstalled(true);window.addEventListener("beforeinstallprompt",before);window.addEventListener("appinstalled",done);if("serviceWorker" in navigator)void navigator.serviceWorker.register("/sw.js").catch(()=>{});return()=>{window.removeEventListener("beforeinstallprompt",before);window.removeEventListener("appinstalled",done)}},[]);
+if(installed)return null;
+const click=async()=>{if(promptEvent){await promptEvent.prompt();const result=await promptEvent.userChoice;if(result.outcome==="accepted")setInstalled(true);setPromptEvent(null)}else setHelp(v=>!v)};
+return <div className="pwa-install-wrap"><button className="pwa-install-button" onClick={()=>void click()}><Download size={15}/><span>Install App</span></button>{help&&<div className="pwa-install-help" role="dialog" aria-label="Petunjuk instalasi"><button className="pwa-help-close" onClick={()=>setHelp(false)} aria-label="Tutup"><X size={15}/></button><Smartphone size={21}/><strong>Pasang OtoClinic</strong><p>Android/Chrome: buka menu ⋮ lalu pilih <b>Install app</b> atau <b>Tambahkan ke layar utama</b>.</p><p>iPhone/Safari: tekan <b>Bagikan</b>, lalu <b>Tambahkan ke Layar Utama</b>.</p></div>}</div>}
