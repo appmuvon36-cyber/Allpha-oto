@@ -608,6 +608,8 @@ async def register_supplier_document(
     identity: dict[str, Any] = Depends(require_active_profile),
 ) -> dict[str, Any]:
     supplier = await get_owned_supplier(identity)
+    if request.expires_at is not None and request.expires_at.utcoffset() is None:
+        raise HTTPException(status_code=422, detail="Document expiry must include a timezone.")
     payload = request.model_dump(mode="json", exclude_none=True)
     result = await supabase_supplier_rpc(
         "oto_supplier_document_register",
@@ -642,7 +644,11 @@ async def submit_supplier_offer(
     identity: dict[str, Any] = Depends(require_active_profile),
 ) -> dict[str, Any]:
     supplier = await get_owned_supplier(identity)
+    if request.quote_expires_at.utcoffset() is None:
+        raise HTTPException(status_code=422, detail="Quote expiry must include a timezone.")
     payload = request.model_dump(mode="json", exclude_none=True)
+    if not payload.get("source_evidence"):
+        raise HTTPException(status_code=422, detail="Supplier source evidence is required.")
     if payload.get("condition") not in PRODUCT_CONDITIONS:
         raise HTTPException(status_code=422, detail="Supplier offer condition is invalid.")
     if payload.get("source_url") and not payload["source_url"].lower().startswith(("https://", "http://")):
