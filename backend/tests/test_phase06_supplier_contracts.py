@@ -68,6 +68,55 @@ class Phase06SupplierContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         rpc.assert_not_awaited()
 
+    def test_document_registration_verifies_bytes_and_server_checksum(self):
+        supplier_id = str(uuid4())
+        path = self.user_id + "/" + supplier_id + "/registration.pdf"
+        checksum = "a" * 64
+        result = {"document": {"id": str(uuid4()), "status": "pending_review"}, "replayed": False}
+        with patch.object(api, "supabase_get", new_callable=AsyncMock) as get_rows:
+            get_rows.return_value = [{"id": supplier_id, "status": "pending_review", "owner_user_id": self.user_id}]
+            with patch.object(api, "verify_supplier_document_upload", new_callable=AsyncMock) as verify:
+                verify.return_value = checksum
+                with patch.object(api, "supabase_supplier_rpc", new_callable=AsyncMock) as rpc:
+                    rpc.return_value = result
+                    response = self.client.post(
+                        "/v1/supplier/documents",
+                        headers={"Idempotency-Key": "phase06-document-0001"},
+                        json={
+                            "document_type": "business_registration",
+                            "storage_path": path,
+                            "original_filename": "registration.pdf",
+                            "content_type": "application/pdf",
+                            "file_size_bytes": 1024,
+                            "sha256": checksum,
+                        },
+                    )
+        self.assertEqual(response.status_code, 200, response.text)
+        verify.assert_awaited_once_with(path, "application/pdf", 1024, checksum, "test-only-token")
+        args = rpc.await_args.args
+        self.assertEqual(args[0], "oto_supplier_document_register")
+        self.assertEqual(args[1]["p_payload"]["sha256"], checksum)
+        self.assertEqual(args[1]["p_request_id"], "phase06-document-0001")
+
+    def test_document_registration_rejects_path_outside_supplier_folder(self):
+        supplier_id = str(uuid4())
+        with patch.object(api, "supabase_get", new_callable=AsyncMock) as get_rows:
+            get_rows.return_value = [{"id": supplier_id, "status": "pending_review", "owner_user_id": self.user_id}]
+            with patch.object(api, "verify_supplier_document_upload", new_callable=AsyncMock) as verify:
+                response = self.client.post(
+                    "/v1/supplier/documents",
+                    headers={"Idempotency-Key": "phase06-document-0002"},
+                    json={
+                        "document_type": "business_registration",
+                        "storage_path": "someone-else/" + supplier_id + "/registration.pdf",
+                        "original_filename": "registration.pdf",
+                        "content_type": "application/pdf",
+                        "file_size_bytes": 1024,
+                    },
+                )
+        self.assertEqual(response.status_code, 422)
+        verify.assert_not_awaited()
+
     def test_supplier_offer_requires_source_evidence(self):
         supplier_id = str(uuid4())
         with patch.object(api, "supabase_get", new_callable=AsyncMock) as get_rows:
