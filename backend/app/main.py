@@ -1,8 +1,9 @@
 from collections.abc import Callable
 from typing import Any
+from uuid import UUID
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,7 +25,7 @@ class Settings(BaseSettings):
 settings = Settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.3.0",
+    version="0.4.0",
     docs_url=None if settings.environment.lower() == "production" else "/docs",
     redoc_url=None,
 )
@@ -96,9 +97,7 @@ async def get_current_identity(
             return {
                 "user": {"id": user_id, "email": auth_user.get("email")},
                 "profile": profile,
-                # Missing profiles never grant elevated access.
                 "role": profile.get("role") if profile else None,
-                # Internal only: never include this value in API response bodies.
                 "_access_token": access_token,
             }
     except HTTPException:
@@ -129,6 +128,44 @@ def require_roles(*allowed_roles: str) -> Callable[..., Any]:
     return role_dependency
 
 
+async def supabase_get(
+    table: str,
+    params: dict[str, str],
+    access_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Read through Supabase REST using anon key and optional caller JWT; RLS remains authoritative."""
+    supabase_url, anon_key = require_supabase_configuration()
+    headers = {"apikey": anon_key, "Accept": "application/json"}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    else:
+        headers["Authorization"] = f"Bearer {anon_key}"
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.get(
+                f"{supabase_url}/rest/v1/{table}",
+                params=params,
+                headers=headers,
+            )
+        if response.status_code in (401, 403):
+            raise HTTPException(status_code=503, detail="Data access is unavailable under current database policies.")
+        if response.status_code == 429 or response.status_code >= 500:
+            raise HTTPException(status_code=503, detail="Data service is temporarily unavailable.")
+        if response.status_code != 200:
+            raise HTTPException(status_code=503, detail="Data query failed.")
+        rows = response.json()
+        if not isinstance(rows, list):
+            raise HTTPException(status_code=503, detail="Data service returned an invalid response.")
+        return rows
+    except HTTPException:
+        raise
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail="Data request timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Could not reach the data service.") from exc
+
+
 @app.get("/health", tags=["system"])
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": "otoclinic-api", "environment": settings.environment}
@@ -141,7 +178,6 @@ async def readiness() -> dict[str, str]:
             status_code=503,
             detail="configuration-required: set SUPABASE_URL and SUPABASE_ANON_KEY",
         )
-    # Configuration-only readiness; this does not claim a database connectivity check.
     return {"status": "configured", "service": "otoclinic-api"}
 
 
@@ -153,42 +189,112 @@ async def get_current_user(
     return {key: value for key, value in identity.items() if not key.startswith("_")}
 
 
+@app.get("/v1/catalog/products", tags=["catalog"])
+async def list_public_products(
+    q: str | None = Query(default=None, min_length=1, max_length=100),
+    category: str | None = Query(default=None, min_length=1, max_length=80),
+    condition: str | None = Query(default=None, min_length=1, max_length=40),
+    part_number: str | None = Query(default=None, min_length=1, max_length=100),
+    limit: int = Query(default=24, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10000),
+) -> dict[str, Any]:
+    """Public catalog search. Supabase RLS limits results to published products."""
+    params = {
+        "select": "id,sku,slug,name,description,brand,part_number,category,condition,condition_grade,package_quantity,warranty_days,currency,retail_price,fitment_summary,published_at",
+        "status": "eq.published",
+        "order": "name.asc",
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if category:
+        params["category"] = f"ilike.*{category.strip()}*"
+    if condition:
+        params["condition"] = f"eq.{condition.strip().lower()}"
+    if part_number:
+        params["part_number"] = f"ilike.*{part_number.strip()}*"
+    if q:
+        term = q.strip().replace(",", " ").replace("%", "").replace("*", "")
+        params["or"] = f"(name.ilike.*{term}*,sku.ilike.*{term}*,brand.ilike.*{term}*,part_number.ilike.*{term}*)"
+    rows = await supabase_get("products", params)
+    return {"items": rows, "count": len(rows), "limit": limit, "offset": offset}
+
+
+@app.get("/v1/vehicles/makes", tags=["vehicles"])
+async def list_vehicle_makes() -> dict[str, Any]:
+    rows = await supabase_get(
+        "vehicle_makes",
+        {"select": "id,name,slug", "is_active": "eq.true", "order": "name.asc", "limit": "200"},
+    )
+    return {"items": rows, "count": len(rows)}
+
+
+@app.get("/v1/vehicles/models", tags=["vehicles"])
+async def list_vehicle_models(
+    make_id: UUID | None = None,
+    vehicle_type: str | None = Query(default=None, min_length=1, max_length=30),
+) -> dict[str, Any]:
+    params = {
+        "select": "id,make_id,name,slug,vehicle_type",
+        "is_active": "eq.true",
+        "order": "name.asc",
+        "limit": "500",
+    }
+    if make_id:
+        params["make_id"] = f"eq.{make_id}"
+    if vehicle_type:
+        normalized = vehicle_type.strip().lower()
+        if normalized not in {"motorcycle", "car", "commercial", "other"}:
+            raise HTTPException(status_code=422, detail="Unsupported vehicle type.")
+        params["vehicle_type"] = f"eq.{normalized}"
+    rows = await supabase_get("vehicle_models", params)
+    return {"items": rows, "count": len(rows)}
+
+
+@app.get("/v1/vehicles/variants", tags=["vehicles"])
+async def list_vehicle_variants(
+    model_id: UUID = Query(...),
+) -> dict[str, Any]:
+    rows = await supabase_get(
+        "vehicle_variants",
+        {
+            "select": "id,model_id,name,year_start,year_end,engine_code,transmission,notes",
+            "model_id": f"eq.{model_id}",
+            "is_active": "eq.true",
+            "order": "year_start.asc.nullsfirst,name.asc",
+            "limit": "500",
+        },
+    )
+    return {"items": rows, "count": len(rows)}
+
+
+@app.get("/v1/catalog/products/{product_id}/fitments", tags=["fitment"])
+async def list_verified_product_fitments(product_id: UUID) -> dict[str, Any]:
+    """Only verified fitments attached to published products are visible under the existing RLS policy."""
+    rows = await supabase_get(
+        "product_fitments",
+        {
+            "select": "id,product_id,variant_id,status,evidence_url,evidence_note,verified_at,vehicle_variants(id,model_id,name,year_start,year_end,engine_code,transmission,vehicle_models(id,make_id,name,slug,vehicle_type,vehicle_makes(id,name,slug)))",
+            "product_id": f"eq.{product_id}",
+            "status": "eq.verified",
+            "order": "verified_at.desc",
+            "limit": "100",
+        },
+    )
+    return {"items": rows, "count": len(rows)}
+
+
 @app.get("/v1/admin/products", tags=["catalog"])
 async def list_admin_products(
     identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "moderator")),
 ) -> dict[str, Any]:
     """Read real catalog rows for authorized staff; Supabase RLS remains authoritative."""
-    supabase_url, anon_key = require_supabase_configuration()
-    headers = {
-        "apikey": anon_key,
-        "Authorization": f"Bearer {identity['_access_token']}",
-        "Accept": "application/json",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            response = await client.get(
-                f"{supabase_url}/rest/v1/products",
-                params={
-                    "select": "id,sku,slug,name,description,brand,part_number,category,condition,status,currency,retail_price,created_at,updated_at",
-                    "order": "created_at.desc",
-                    "limit": "100",
-                },
-                headers=headers,
-            )
-            if response.status_code in (401, 403):
-                # Do not turn an RLS/permission failure into a successful empty catalog.
-                raise HTTPException(status_code=503, detail="Catalog access is unavailable under current database policies.")
-            if response.status_code == 429 or response.status_code >= 500:
-                raise HTTPException(status_code=503, detail="Catalog service is temporarily unavailable.")
-            if response.status_code != 200:
-                raise HTTPException(status_code=503, detail="Catalog query failed.")
-            rows = response.json()
-            if not isinstance(rows, list):
-                raise HTTPException(status_code=503, detail="Catalog service returned an invalid response.")
-            return {"items": rows, "count": len(rows), "limit": 100}
-    except HTTPException:
-        raise
-    except httpx.TimeoutException as exc:
-        raise HTTPException(status_code=503, detail="Catalog request timed out.") from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=503, detail="Could not reach the catalog service.") from exc
+    rows = await supabase_get(
+        "products",
+        {
+            "select": "id,sku,slug,name,description,brand,part_number,category,condition,status,currency,retail_price,created_at,updated_at",
+            "order": "created_at.desc",
+            "limit": "100",
+        },
+        access_token=identity["_access_token"],
+    )
+    return {"items": rows, "count": len(rows), "limit": 100}
