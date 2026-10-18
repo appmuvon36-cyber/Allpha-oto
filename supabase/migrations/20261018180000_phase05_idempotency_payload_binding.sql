@@ -24,7 +24,7 @@ begin
   if found then
    if v_existing.details->>'action' is distinct from p_action
       or v_existing.details->'payload' is distinct from coalesce(p_payload,'{}'::jsonb)
-      or v_existing.details->'target_id' is distinct from to_jsonb(p_product_id) then
+      or v_existing.details->'target_id' is distinct from coalesce(to_jsonb(p_product_id),'null'::jsonb) then
      raise exception using errcode='22023',message='request_id_reused_for_different_operation';
    end if;
    return jsonb_set(coalesce(v_existing.details->'result',jsonb_build_object('id',v_existing.entity_id)), '{replayed}', 'true'::jsonb, true);
