@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -49,27 +50,10 @@ def require_supabase_configuration() -> tuple[str, str]:
     return url, key
 
 
-@app.get("/health", tags=["system"])
-async def health() -> dict[str, str]:
-    return {"status": "ok", "service": "otoclinic-api", "environment": settings.environment}
-
-
-@app.get("/ready", tags=["system"])
-async def readiness() -> dict[str, str]:
-    if not settings.supabase_url or not settings.supabase_anon_key:
-        raise HTTPException(
-            status_code=503,
-            detail="configuration-required: set SUPABASE_URL and SUPABASE_ANON_KEY",
-        )
-    # This checks configuration only, not database connectivity or full business readiness.
-    return {"status": "configured", "service": "otoclinic-api"}
-
-
-@app.get("/v1/auth/me", tags=["auth"])
-async def get_current_user(
+async def get_current_identity(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> dict[str, Any]:
-    """Validate the caller's Supabase access token and return its own profile only."""
+    """Verify a Supabase bearer token and resolve only the caller's own profile."""
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Bearer access token required.")
 
@@ -121,7 +105,7 @@ async def get_current_user(
             return {
                 "user": {"id": user_id, "email": auth_user.get("email")},
                 "profile": profile,
-                # Missing profiles receive no elevated role; provisioning is a separate workflow.
+                # A missing profile has no role and never grants elevated access.
                 "role": profile.get("role") if profile else None,
             }
     except HTTPException:
@@ -130,3 +114,49 @@ async def get_current_user(
         raise HTTPException(status_code=503, detail="Supabase request timed out.") from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="Could not reach Supabase.") from exc
+
+
+def require_roles(*allowed_roles: str) -> Callable[..., Any]:
+    """Build a reusable FastAPI dependency for active profiles with explicit roles."""
+    normalized_roles = frozenset(role.strip().lower() for role in allowed_roles if role.strip())
+    if not normalized_roles:
+        raise ValueError("require_roles needs at least one non-empty role.")
+
+    async def role_dependency(
+        identity: dict[str, Any] = Depends(get_current_identity),
+    ) -> dict[str, Any]:
+        profile = identity.get("profile")
+        if not isinstance(profile, dict):
+            raise HTTPException(status_code=403, detail="An active user profile is required.")
+        if profile.get("is_active") is not True:
+            raise HTTPException(status_code=403, detail="This account is inactive or not provisioned.")
+        role = profile.get("role")
+        if not isinstance(role, str) or role.strip().lower() not in normalized_roles:
+            raise HTTPException(status_code=403, detail="Your role is not allowed to perform this action.")
+        return identity
+
+    return role_dependency
+
+
+@app.get("/health", tags=["system"])
+async def health() -> dict[str, str]:
+    return {"status": "ok", "service": "otoclinic-api", "environment": settings.environment}
+
+
+@app.get("/ready", tags=["system"])
+async def readiness() -> dict[str, str]:
+    if not settings.supabase_url or not settings.supabase_anon_key:
+        raise HTTPException(
+            status_code=503,
+            detail="configuration-required: set SUPABASE_URL and SUPABASE_ANON_KEY",
+        )
+    # This checks configuration only, not database connectivity or full business readiness.
+    return {"status": "configured", "service": "otoclinic-api"}
+
+
+@app.get("/v1/auth/me", tags=["auth"])
+async def get_current_user(
+    identity: dict[str, Any] = Depends(get_current_identity),
+) -> dict[str, Any]:
+    """Return the authenticated user's own identity/profile for any user category."""
+    return identity
