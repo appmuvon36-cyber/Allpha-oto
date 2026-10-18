@@ -46,9 +46,15 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 - **Verified Admin deployment and HTTP smoke:** Railway deployment `96163369-988c-44a6-9e25-bf085c5350c5` SUCCESS, commit `989bd92cb546613c5f659b537556281324bf6ec0`. Production `/login`, `/admin`, and `/catalog` returned HTTP 200 (protected views showed the unauthenticated login/guard state); API `/v1/admin/products` returned 401 without a bearer token; API `/health` returned 200. No authenticated production session or production test data was used.
 - Phase 05 is closed for feature progression. Real active-user role/session, RLS/IDOR, and full authenticated E2E matrix remain explicitly scheduled for Phase 12; supplier image/document rights evidence remains a Phase 06 operational workflow requirement.
 
-## Phase 06 — Supplier and sourcing (NOT IMPLEMENTED)
-- Supplier verification, source evidence, quote validity, stock timestamp, acquisition cost and lead time.
-- Candidate matching and deduplication; insufficient evidence is NOT_READY.
+## Phase 06 — Supplier and sourcing (IMPLEMENTED IN SOURCE + LIVE SCHEMA; DEPLOYMENT/SMOKE GATE PENDING)
+- Additive live migrations: `20261018170151_phase06_supplier_sourcing`, `20261018170351_phase06_supplier_rpc_actor_guards`, `20261018170609_phase06_supplier_review_read_policies`, `20261018170904_phase06_active_owner_rls_hardening`, `20261018170953_phase06_supplier_mutation_rpc_only`, `20261018171044_phase06_supplier_document_expiry_guards`, `20261018171304_phase06_offer_candidate_matching`, and `20261018171341_phase06_offer_candidate_link_mutation`. Source filenames are reconciled with the live migration ledger.
+- Reuses existing `suppliers` and `supplier_offers`; adds supplier registration/verification metadata, `supplier_documents`, lead time/MOQ/warranty/source-verification fields, dedupe indexes, and a private `supplier-verification-documents` Storage bucket (PDF/JPG/PNG, 10 MB limit).
+- FastAPI routes: `/v1/supplier/profile`, `/v1/supplier/onboarding`, `/v1/supplier/documents`, `/v1/supplier/offers`, `/v1/admin/suppliers`, `/v1/admin/supplier-documents`, `/v1/admin/supplier-offers`, `/v1/admin/supplier-offers/{offer_id}/candidates`, and `/v1/admin/supplier-mutations`.
+- Supplier PWA route `/supplier` supports existing-account login, onboarding, private document upload, and offer submission. Admin route `/suppliers` supports supplier/document/offer review, signed document access, expiry/stock freshness indicators, and manual candidate linking.
+- Exact normalized SKU/part-number candidate matching is advisory only; it never links automatically and does not claim fitment. Manual linking returns the offer to `pending_review`. Supplier SKU/source URL deduplication updates an existing pending/active offer rather than creating a duplicate.
+- Security: SECURITY DEFINER RPCs validate active profiles, actor/owner or staff role, idempotency key/payload, and status transitions; anon/PUBLIC execution is revoked. Direct staff table mutation policies are replaced with read-only policies; owner RLS requires an active profile. Expired documents cannot be verified or used to approve a supplier.
+- **CI evidence:** [OtoClinic CI #153](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39148855203) passed Phase 05 transactional tests plus Phase 06 database assertions for onboarding/replay/conflict, document registration/review/expiry, supplier approval, offer stock timestamp/quote expiry, SKU deduplication, exact candidate matching, audited manual linking, and RPC grants. [Phase 05 contract/build #38](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39148855313) passed backend contracts and Web/Admin typecheck/build on commit `d21364e450b3fafa36d4523f8c47f797dccf0f27`; UI-only follow-up commits still need a final CI pass.
+- Phase 06 remains OPEN until final CI passes on the latest UI/docs commit, API/Admin/Web deployments succeed, production HTTP smoke tests pass, and live supplier/offer/document row counts confirm no test data was inserted. Real authenticated supplier/admin session tests remain in Phase 12.
 
 ## Phase 07 — Inventory and order lifecycle (NOT IMPLEMENTED)
 - Preserve current \`inventory_ledger\`; implement atomic stock mutations and idempotency.
@@ -79,8 +85,8 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 - A green build is not the same as verified production deployment.
 
 ## Execution order
-1. Finish Phase 05 catalog lifecycle and fitment review APIs plus connect real Web/Admin UI flows.
-2. Build Phase 06 supplier onboarding and offer/source evidence.
+1. Phase 05 catalog lifecycle and fitment review APIs closed with verified CI and Admin smoke evidence; full active-user E2E remains Phase 12.
+2. Close Phase 06 supplier onboarding, private document verification, sourcing offers, exact candidate matching, deduplication, and audit after deployment/smoke gates.
 3. Build Phase 07 inventory ledger mutations, order lifecycle and payment verification.
 4. Expand Phase 08 operational console and audit trail using the business APIs.
 5. Complete Phase 09 customer vehicle selection, product detail, cart, checkout and tracking.
