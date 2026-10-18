@@ -405,6 +405,82 @@ async def supabase_catalog_rpc(
         raise HTTPException(status_code=503, detail="Could not reach catalog service.") from exc
 
 
+async def supabase_supplier_rpc(
+    function_name: str,
+    body: dict[str, Any],
+    access_token: str,
+) -> Any:
+    """Call only allowlisted supplier RPCs with the verified caller JWT."""
+    allowed_functions = {
+        "oto_supplier_onboard",
+        "oto_supplier_document_register",
+        "oto_supplier_offer_submit",
+        "oto_supplier_admin_mutate",
+    }
+    if function_name not in allowed_functions:
+        raise HTTPException(status_code=422, detail="Unsupported supplier operation.")
+    supabase_url, anon_key = require_supabase_configuration()
+    headers = {
+        "apikey": anon_key,
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            response = await client.post(
+                f"{supabase_url}/rest/v1/rpc/{function_name}",
+                headers=headers,
+                json=body,
+            )
+        if response.status_code in (401, 403):
+            raise HTTPException(status_code=403, detail="Supplier operation is not permitted.")
+        if response.status_code == 429 or response.status_code >= 500:
+            raise HTTPException(status_code=503, detail="Supplier service is temporarily unavailable.")
+        if response.status_code not in (200, 201):
+            try:
+                db_error = response.json()
+                message = str(db_error.get("message", ""))
+                code = str(db_error.get("code", ""))
+            except (ValueError, AttributeError):
+                message, code = "", ""
+            if code == "P0002" or "not_found" in message:
+                raise HTTPException(status_code=404, detail="Supplier record was not found.")
+            if code == "42501" or "ownership_required" in message or "active_supplier_required" in message:
+                raise HTTPException(status_code=403, detail="Supplier operation is not permitted for this account.")
+            if code == "23505" or "already_exists" in message or "duplicate key" in message:
+                raise HTTPException(status_code=409, detail="A matching supplier record already exists.")
+            if code in ("22023", "22P02", "23514", "23502"):
+                raise HTTPException(status_code=422, detail="Supplier operation failed validation.")
+            raise HTTPException(status_code=503, detail="Supplier operation could not be completed.")
+        return response.json()
+    except HTTPException:
+        raise
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail="Supplier operation timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Could not reach supplier service.") from exc
+
+
+async def get_owned_supplier(identity: dict[str, Any]) -> dict[str, Any]:
+    user = identity.get("user")
+    user_id = user.get("id") if isinstance(user, dict) else None
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authenticated user required.")
+    rows = await supabase_get(
+        "suppliers",
+        {
+            "select": "id,owner_user_id,legal_name,display_name,supplier_type,status,contact_name,contact_email,contact_phone,address,business_registration_number,website_url,reviewed_at,review_note,created_at,updated_at",
+            "owner_user_id": f"eq.{user_id}",
+            "limit": "1",
+        },
+        access_token=identity["_access_token"],
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Supplier onboarding has not been submitted.")
+    return rows[0]
+
+
 @app.get("/v1/admin/catalog/fitments", tags=["fitment"])
 async def list_admin_fitments(
     product_id: UUID | None = None,
