@@ -1,14 +1,15 @@
 # OtoClinic — Implementation Phases
 
-Brand: OtoClinic. Production database already contains a preliminary business schema. The implementation must reconcile with that live schema, not recreate it.
+Brand: OtoClinic. Production database already contains a preliminary business schema. Reconcile with that live schema; do not recreate it.
 
-## Phase 00 — Audit and reconcile (VERIFIED: baseline recorded)
-- Live repository, Railway services, Supabase schema, migration ledger, enums, indexes, triggers, RLS policies, function grants and security advisor findings are recorded in [PHASE_00_AUDIT.md](./PHASE_00_AUDIT.md).
-- Ten existing public business tables were observed; RLS is enabled on all ten. Queried business-table row counts were zero at audit time. No mock/seed production data was added.
-- Both live migration versions are recorded. The source file for the applied foundation migration is missing from the repository; this is explicitly documented and must be recovered from live catalog metadata before any future schema DDL. Do not reapply the foundation migration to production.
-- `public.rls_auto_enable()` EXECUTE remains revoked from public/anon/authenticated. `public.oto_has_staff_role(...)` is a reviewed advisor warning used by existing RLS policies; do not revoke/convert it without a policy-safe replacement.
-- No destructive schema changes, new database, RLS weakening, or compatibility-app deletion was performed.
-- Early-stage verification policy: focused configuration/schema inspection and relevant smoke checks only; defer broad unit/integration/E2E suites until the corresponding features exist.
+## Phase 00 — Audit and reconcile (VERIFIED: baseline recovered; historical source gap documented)
+- Repository, Railway services, Supabase tables, migration ledger, enums, constraints, indexes, triggers, RLS and security findings are recorded in [PHASE_00_AUDIT.md](./PHASE_00_AUDIT.md).
+- Ten public business tables exist and RLS is enabled on all ten. Queried table row counts were zero at audit time; no mock/seed data was added.
+- The applied foundation migration's original SQL is missing. A catalog-derived recovery artifact is committed at [FOUNDATION_SCHEMA_RECOVERY.md](./FOUNDATION_SCHEMA_RECOVERY.md). It is documentation, not executable SQL, and does not claim byte-for-byte recovery or full migration parity.
+- Before any future schema DDL, capture the remaining exact policy expressions, grants, trigger attachments and event-trigger registration, then compare an additive migration with the live catalog. Never reapply the foundation migration.
+- `public.rls_auto_enable()` EXECUTE remains revoked from public/anon/authenticated. `public.oto_has_staff_role(...)` is used by existing RLS policies; do not revoke or convert without a policy-safe replacement.
+- No destructive schema change, new DB/service, RLS weakening, or compatibility-app deletion was performed.
+- Early-phase policy: focused inspection and relevant smoke checks only; defer broad suites until the corresponding features exist.
 
 ## Phase 01 — Brand, product flows and acceptance
 - OtoClinic brand system; Indonesian UI and IDR.
