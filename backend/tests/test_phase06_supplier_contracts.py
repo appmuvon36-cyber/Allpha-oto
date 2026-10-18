@@ -129,6 +129,44 @@ class Phase06SupplierContractTests(unittest.TestCase):
         self.assertEqual(args[1]["p_request_id"], "phase06-offer-0002")
         self.assertEqual(args[2], "test-only-token")
 
+    def test_candidate_match_endpoint_forwards_offer_id_and_token(self):
+        self.identity["profile"]["role"] = "catalog_editor"
+        self.identity["role"] = "catalog_editor"
+        offer_id = str(uuid4())
+        result = {"offer_id": offer_id, "match_method": "exact_normalized_identifier", "automatic_linking": False, "candidates": []}
+        with patch.object(api, "supabase_supplier_rpc", new_callable=AsyncMock) as rpc:
+            rpc.return_value = result
+            response = self.client.get("/v1/admin/supplier-offers/" + offer_id + "/candidates")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["result"], result)
+        rpc.assert_awaited_once_with(
+            "oto_supplier_offer_match_candidates",
+            {"p_offer_id": offer_id},
+            "test-only-token",
+        )
+
+    def test_admin_can_request_audited_manual_candidate_link(self):
+        self.identity["profile"]["role"] = "inventory_manager"
+        self.identity["role"] = "inventory_manager"
+        offer_id = str(uuid4())
+        product_id = str(uuid4())
+        result = {"offer": {"id": offer_id, "product_id": product_id, "status": "pending_review"}, "replayed": False}
+        with patch.object(api, "supabase_supplier_rpc", new_callable=AsyncMock) as rpc:
+            rpc.return_value = result
+            response = self.client.post(
+                "/v1/admin/supplier-mutations",
+                headers={"Idempotency-Key": "phase06-link-0001"},
+                json={"action": "match_offer_product", "offer_id": offer_id, "payload": {"product_id": product_id}},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["result"], result)
+        rpc.assert_awaited_once()
+        args = rpc.await_args.args
+        self.assertEqual(args[0], "oto_supplier_admin_mutate")
+        self.assertEqual(args[1]["p_action"], "match_offer_product")
+        self.assertEqual(args[1]["p_offer_id"], offer_id)
+        self.assertEqual(args[1]["p_payload"]["product_id"], product_id)
+
     def test_admin_supplier_mutation_rejects_unknown_action(self):
         self.identity["profile"]["role"] = "admin"
         self.identity["role"] = "admin"
