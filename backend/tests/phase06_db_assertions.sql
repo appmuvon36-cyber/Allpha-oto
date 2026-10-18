@@ -1,6 +1,6 @@
 \set ON_ERROR_STOP on
 -- Disposable database only. No production users or supplier data are touched.
-do $
+do $guard$
 begin
   if has_function_privilege('anon','public.oto_supplier_onboard(jsonb,text)','EXECUTE')
     or has_function_privilege('anon','public.oto_supplier_offer_submit(uuid,jsonb,text)','EXECUTE')
@@ -15,7 +15,7 @@ begin
   if exists(select 1 from pg_policies where schemaname='public' and policyname in ('staff manages suppliers','staff manages offers','staff manages supplier documents')) then
     raise exception 'direct staff table mutations must be disabled in favor of audited RPCs';
   end if;
-end $;
+end $guard$;
 
 insert into auth.users(id,email) values
  ('20000000-0000-4000-8000-000000000001','supplier-fixture@example.invalid'),
