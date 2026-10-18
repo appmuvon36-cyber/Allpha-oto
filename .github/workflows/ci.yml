@@ -34,8 +34,24 @@ jobs:
         run: npm run build
 
   api:
-    name: API syntax and health smoke
+    name: API contracts and Phase 05 database transaction tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: otoclinic_phase05_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d otoclinic_phase05_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/otoclinic_phase05_test
     defaults:
       run:
         working-directory: backend
@@ -58,3 +74,27 @@ jobs:
           PY
       - name: Phase 05 mutation contracts
         run: python -m unittest discover -s tests -v
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Prepare disposable Phase 05 database fixture
+        run: |
+          for attempt in $(seq 1 30); do
+            pg_isready -d "$DATABASE_URL" && break
+            sleep 2
+          done
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/phase05_db_fixture.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261018163123_phase05_idempotency_payload_binding.sql
+      - name: Verify Phase 05 atomicity, audit, and idempotency
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/phase05_db_assertions.sql
+      - name: Verify concurrent retries are serialized
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/phase05_concurrent_call.sql > /tmp/phase05-retry-a.log &
+          first=$!
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/phase05_concurrent_call.sql > /tmp/phase05-retry-b.log &
+          second=$!
+          wait "$first"
+          wait "$second"
+          products=$(psql "$DATABASE_URL" -Atqc "select count(*) from public.products where sku='PHASE05-CONCURRENT-1'")
+          audits=$(psql "$DATABASE_URL" -Atqc "select count(*) from public.audit_logs where request_id='phase05-concurrent-retry-01'")
+          test "$products" = "1"
+          test "$audits" = "1"
