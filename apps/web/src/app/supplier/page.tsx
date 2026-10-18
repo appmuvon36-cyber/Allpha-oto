@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, FileUp, LogOut, RefreshCw, ShieldCheck, Truck } from "lucide-react";
+import { ArrowLeft, FileUp, LogOut, RefreshCw, ShieldCheck, Truck } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 type Supplier = { id:string; legal_name:string; display_name:string; supplier_type:string; status:string; review_note:string|null; contact_email:string|null; };
