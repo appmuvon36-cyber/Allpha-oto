@@ -7,7 +7,8 @@ import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field\nfrom pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
