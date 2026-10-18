@@ -1,15 +1,2 @@
 import type { MetadataRoute } from "next";
-
-export default function manifest(): MetadataRoute.Manifest {
-  return {
-    name: "OtoClinic — Spare Part Otomotif",
-    short_name: "OtoClinic",
-    description: "Marketplace spare part mobil dan motor.",
-    start_url: "/",
-    display: "standalone",
-    background_color: "#f5f6f8",
-    theme_color: "#101b2b",
-    lang: "id-ID",
-    icons: [],
-  };
-}
+export default function manifest(): MetadataRoute.Manifest { return {name:"OtoClinic — Marketplace Spare Part Otomotif",short_name:"OtoClinic",description:"Marketplace spare part mobil dan motor Indonesia.",start_url:"/",scope:"/",display:"standalone",display_override:["standalone","minimal-ui"],orientation:"portrait-primary",background_color:"#f5f6f8",theme_color:"#101b2b",lang:"id-ID",categories:["shopping","auto"],icons:[{src:"/icons/icon-192.svg",sizes:"192x192",type:"image/svg+xml",purpose:"any"},{src:"/icons/icon-512.svg",sizes:"512x512",type:"image/svg+xml",purpose:"any"}]};}
