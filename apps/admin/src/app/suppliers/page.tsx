@@ -114,6 +114,7 @@ export default function SuppliersPage() {
 
   const canReview=role==="admin"||role==="moderator";
   const canReadDocuments=canReview||role==="catalog_editor";
+  const canReadAudit=role==="admin";
   const money=(value:number|null)=>value===null?"—":new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(value);
   const date=(value:string|null)=>value?new Date(value).toLocaleString("id-ID",{dateStyle:"medium",timeStyle:"short"}):"Belum tercatat";
 
