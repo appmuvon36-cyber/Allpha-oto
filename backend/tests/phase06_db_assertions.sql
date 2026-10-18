@@ -1,5 +1,22 @@
 \set ON_ERROR_STOP on
 -- Disposable database only. No production users or supplier data are touched.
+do $
+begin
+  if has_function_privilege('anon','public.oto_supplier_onboard(jsonb,text)','EXECUTE')
+    or has_function_privilege('anon','public.oto_supplier_offer_submit(uuid,jsonb,text)','EXECUTE')
+    or has_function_privilege('anon','public.oto_supplier_admin_mutate(text,uuid,uuid,uuid,jsonb,text)','EXECUTE') then
+    raise exception 'anonymous role must not execute supplier SECURITY DEFINER RPCs';
+  end if;
+  if not has_function_privilege('authenticated','public.oto_supplier_onboard(jsonb,text)','EXECUTE')
+    or not has_function_privilege('authenticated','public.oto_supplier_offer_submit(uuid,jsonb,text)','EXECUTE')
+    or not has_function_privilege('authenticated','public.oto_supplier_admin_mutate(text,uuid,uuid,uuid,jsonb,text)','EXECUTE') then
+    raise exception 'authenticated RPC grants are missing';
+  end if;
+  if exists(select 1 from pg_policies where schemaname='public' and policyname in ('staff manages suppliers','staff manages offers','staff manages supplier documents')) then
+    raise exception 'direct staff table mutations must be disabled in favor of audited RPCs';
+  end if;
+end $;
+
 insert into auth.users(id,email) values
  ('20000000-0000-4000-8000-000000000001','supplier-fixture@example.invalid'),
  ('20000000-0000-4000-8000-000000000002','moderator-fixture@example.invalid'),
