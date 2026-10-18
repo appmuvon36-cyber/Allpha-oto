@@ -99,8 +99,8 @@ jobs:
           test "$audits" = "1"
       - name: Apply Phase 06 supplier migrations to disposable database
         run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261018170000_phase06_supplier_sourcing.sql
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261018171000_phase06_supplier_rpc_actor_guards.sql
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261018172000_phase06_supplier_review_read_policies.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261018170151_phase06_supplier_sourcing.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261018170351_phase06_supplier_rpc_actor_guards.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261018170609_phase06_supplier_review_read_policies.sql
       - name: Verify Phase 06 onboarding, document review, sourcing and audit
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/phase06_db_assertions.sql
