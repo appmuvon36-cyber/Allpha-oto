@@ -56,3 +56,5 @@ jobs:
           assert response.status_code == 200, response.text
           assert response.json()["service"] == "otoclinic-api"
           PY
+      - name: Phase 05 mutation contracts
+        run: python -m unittest discover -s tests -v
