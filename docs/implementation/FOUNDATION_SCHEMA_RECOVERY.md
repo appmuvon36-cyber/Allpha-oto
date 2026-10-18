@@ -42,13 +42,29 @@ All ten tables below exist in `public`; RLS is enabled on all of them and two po
 - inventory_ledger: PK, (product_id, created_at DESC).
 - audit_logs: PK, (entity_type, entity_id, created_at DESC).
 
-## Trigger functions and RLS contract
+## Trigger functions, triggers and grants observed
 
-- `oto_set_updated_at()` sets `NEW.updated_at = now()`; fixed search path `pg_catalog`. Update triggers were observed on products, supplier_offers, suppliers and user_profiles.
-- `oto_has_staff_role(oto_user_role[])` is SECURITY DEFINER with fixed search path and checks the caller's active profile/role. Existing RLS policies rely on it; do not revoke or change without a policy-safe replacement.
-- `rls_auto_enable()` is an event-trigger helper; EXECUTE is revoked from public, anon and authenticated by the next ledger migration.
-- Public reads are limited to active vehicle taxonomy, published products, and verified fitments attached to published products. Profiles are owner-readable with admin read. Staff policies govern taxonomy, catalog, suppliers/offers, inventory and audit logs; supplier owners can read their own supplier/offers. Exact expressions and grants should be captured before claiming full migration parity.
+- `oto_set_updated_at()` sets `NEW.updated_at = now()`; fixed search path `pg_catalog`.
+- Exact triggers: `products_updated_at BEFORE UPDATE ON public.products`; `supplier_offers_updated_at BEFORE UPDATE ON public.supplier_offers`; `suppliers_updated_at BEFORE UPDATE ON public.suppliers`; `user_profiles_updated_at BEFORE UPDATE ON public.user_profiles`. All execute `oto_set_updated_at()`.
+- Event trigger `ensure_rls` runs on `ddl_command_end`, owned by postgres, enabled state `O`, and calls `rls_auto_enable()`.
+- Observed routine EXECUTE grants: `oto_has_staff_role(oto_user_role[])` to authenticated, postgres, service_role; `oto_set_updated_at()` to postgres and service_role; `rls_auto_enable()` to postgres and service_role. The second migration explicitly revokes `rls_auto_enable()` from public, anon and authenticated.
+- `oto_has_staff_role(oto_user_role[])` is SECURITY DEFINER with fixed search path `pg_catalog, public` and checks the caller's active profile/role. Existing RLS policies rely on it; do not revoke or change without a policy-safe replacement.
+
+## RLS policies observed
+
+All ten tables have RLS enabled. The following policy names, commands and expressions were read from `pg_policies`:
+
+- `user_profiles`: SELECT authenticated where `id = auth.uid()` (`profile owner reads own profile`); SELECT authenticated where `oto_has_staff_role(ARRAY['admin'::oto_user_role])` (`staff reads profiles`).
+- `vehicle_makes`: SELECT anon/authenticated where `is_active` (`active vehicles readable`); ALL authenticated with both USING and WITH CHECK `oto_has_staff_role(ARRAY['admin'::oto_user_role, 'catalog_editor'::oto_user_role])` (`staff manages vehicle makes`).
+- `vehicle_models`: SELECT anon/authenticated where `is_active` (`active models readable`); ALL authenticated with the same admin/catalog_editor role check (`staff manages vehicle models`).
+- `vehicle_variants`: SELECT anon/authenticated where `is_active` (`active variants readable`); ALL authenticated with the same admin/catalog_editor role check (`staff manages vehicle variants`).
+- `products`: SELECT anon/authenticated where `status = 'published'::oto_product_status` (`public reads published products`); ALL authenticated with USING and WITH CHECK for admin/catalog_editor/moderator (`staff manages products`).
+- `product_fitments`: SELECT anon/authenticated where status is verified and an associated product is published (`public reads verified published fitments`); ALL authenticated with USING and WITH CHECK for admin/catalog_editor/moderator (`staff manages fitments`).
+- `suppliers`: SELECT authenticated where `owner_user_id = auth.uid()` (`supplier owner reads own supplier`); ALL authenticated with USING and WITH CHECK for admin/catalog_editor/inventory_manager (`staff manages suppliers`).
+- `supplier_offers`: SELECT authenticated when an associated supplier has `owner_user_id = auth.uid()` (`supplier owner reads own offers`); ALL authenticated with USING and WITH CHECK for admin/catalog_editor/inventory_manager (`staff manages offers`).
+- `inventory_ledger`: SELECT authenticated for admin/inventory_manager/order_manager (`inventory staff reads ledger`); INSERT authenticated for admin/inventory_manager (`inventory staff writes ledger`).
+- `audit_logs`: SELECT authenticated for admin (`admin reads audit logs`); INSERT authenticated for admin/catalog_editor/inventory_manager/order_manager/moderator (`staff inserts audit logs`).
 
 ## Reconciliation decision
 
-The original migration SQL remains unrecovered as a historical file. This baseline records the currently observable schema so future work can proceed from evidence. Do not apply it, do not duplicate the foundation migration, and make future schema changes only through reviewed additive migrations after comparing against the live catalog. Exact policy definitions, grants, trigger attachments and event-trigger registration remain the limited outstanding catalog-capture items.
+The original migration SQL remains unrecovered as a historical file. This baseline now records the live schema contract, including trigger attachments, the event trigger, observed routine grants and policy expressions. It can guide future review but cannot prove the original migration's exact source or historical order. Do not apply this file, do not duplicate the foundation migration, and make future schema changes only through reviewed additive migrations after comparing against the live catalog.
