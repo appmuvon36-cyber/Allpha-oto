@@ -198,6 +198,7 @@ async def list_public_products(
     category: str | None = Query(default=None, min_length=1, max_length=80),
     condition: str | None = Query(default=None, min_length=1, max_length=40),
     part_number: str | None = Query(default=None, min_length=1, max_length=100),
+    variant_id: UUID | None = None,
     limit: int = Query(default=24, ge=1, le=100),
     offset: int = Query(default=0, ge=0, le=10000),
 ) -> dict[str, Any]:
@@ -226,6 +227,15 @@ async def list_public_products(
         term = safe_search_term(q)
         if term:
             params["or"] = f"(name.ilike.*{term}*,sku.ilike.*{term}*,brand.ilike.*{term}*,part_number.ilike.*{term}*)"
+    if variant_id:
+        fitment_rows = await supabase_get(
+            "product_fitments",
+            {"select": "product_id", "variant_id": f"eq.{variant_id}", "status": "eq.verified", "limit": "500"},
+        )
+        product_ids = list(dict.fromkeys(str(row["product_id"]) for row in fitment_rows if row.get("product_id")))
+        if not product_ids:
+            return {"items": [], "count": 0, "limit": limit, "offset": offset}
+        params["id"] = f"in.({','.join(product_ids)})"
     rows = await supabase_get("products", params)
     return {"items": rows, "count": len(rows), "limit": limit, "offset": offset}
 
