@@ -1,4 +1,5 @@
 from collections.abc import Callable
+import re
 from typing import Any
 from uuid import UUID
 
@@ -38,6 +39,10 @@ app.add_middleware(
 )
 
 bearer_scheme = HTTPBearer(auto_error=False)
+PRODUCT_CONDITIONS = {
+    "new_oem", "new_aftermarket", "used", "refurbished", "remanufactured", "damaged_for_parts"
+}
+VEHICLE_TYPES = {"motorcycle", "car", "commercial", "other"}
 
 
 def require_supabase_configuration() -> tuple[str, str]:
@@ -136,18 +141,11 @@ async def supabase_get(
     """Read through Supabase REST using anon key and optional caller JWT; RLS remains authoritative."""
     supabase_url, anon_key = require_supabase_configuration()
     headers = {"apikey": anon_key, "Accept": "application/json"}
-    if access_token:
-        headers["Authorization"] = f"Bearer {access_token}"
-    else:
-        headers["Authorization"] = f"Bearer {anon_key}"
+    headers["Authorization"] = f"Bearer {access_token}" if access_token else f"Bearer {anon_key}"
 
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
-            response = await client.get(
-                f"{supabase_url}/rest/v1/{table}",
-                params=params,
-                headers=headers,
-            )
+            response = await client.get(f"{supabase_url}/rest/v1/{table}", params=params, headers=headers)
         if response.status_code in (401, 403):
             raise HTTPException(status_code=503, detail="Data access is unavailable under current database policies.")
         if response.status_code == 429 or response.status_code >= 500:
@@ -164,6 +162,11 @@ async def supabase_get(
         raise HTTPException(status_code=503, detail="Data request timed out.") from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="Could not reach the data service.") from exc
+
+
+def safe_search_term(value: str) -> str:
+    """Keep user search input from altering PostgREST filter grammar."""
+    return re.sub(r"[^\w .\-]", " ", value, flags=re.UNICODE).strip()
 
 
 @app.get("/health", tags=["system"])
@@ -207,14 +210,22 @@ async def list_public_products(
         "offset": str(offset),
     }
     if category:
-        params["category"] = f"ilike.*{category.strip()}*"
+        term = safe_search_term(category)
+        if term:
+            params["category"] = f"ilike.*{term}*"
     if condition:
-        params["condition"] = f"eq.{condition.strip().lower()}"
+        normalized = condition.strip().lower()
+        if normalized not in PRODUCT_CONDITIONS:
+            raise HTTPException(status_code=422, detail="Unsupported product condition.")
+        params["condition"] = f"eq.{normalized}"
     if part_number:
-        params["part_number"] = f"ilike.*{part_number.strip()}*"
+        term = safe_search_term(part_number)
+        if term:
+            params["part_number"] = f"ilike.*{term}*"
     if q:
-        term = q.strip().replace(",", " ").replace("%", "").replace("*", "")
-        params["or"] = f"(name.ilike.*{term}*,sku.ilike.*{term}*,brand.ilike.*{term}*,part_number.ilike.*{term}*)"
+        term = safe_search_term(q)
+        if term:
+            params["or"] = f"(name.ilike.*{term}*,sku.ilike.*{term}*,brand.ilike.*{term}*,part_number.ilike.*{term}*)"
     rows = await supabase_get("products", params)
     return {"items": rows, "count": len(rows), "limit": limit, "offset": offset}
 
@@ -233,17 +244,12 @@ async def list_vehicle_models(
     make_id: UUID | None = None,
     vehicle_type: str | None = Query(default=None, min_length=1, max_length=30),
 ) -> dict[str, Any]:
-    params = {
-        "select": "id,make_id,name,slug,vehicle_type",
-        "is_active": "eq.true",
-        "order": "name.asc",
-        "limit": "500",
-    }
+    params = {"select": "id,make_id,name,slug,vehicle_type", "is_active": "eq.true", "order": "name.asc", "limit": "500"}
     if make_id:
         params["make_id"] = f"eq.{make_id}"
     if vehicle_type:
         normalized = vehicle_type.strip().lower()
-        if normalized not in {"motorcycle", "car", "commercial", "other"}:
+        if normalized not in VEHICLE_TYPES:
             raise HTTPException(status_code=422, detail="Unsupported vehicle type.")
         params["vehicle_type"] = f"eq.{normalized}"
     rows = await supabase_get("vehicle_models", params)
@@ -251,9 +257,7 @@ async def list_vehicle_models(
 
 
 @app.get("/v1/vehicles/variants", tags=["vehicles"])
-async def list_vehicle_variants(
-    model_id: UUID = Query(...),
-) -> dict[str, Any]:
+async def list_vehicle_variants(model_id: UUID = Query(...)) -> dict[str, Any]:
     rows = await supabase_get(
         "vehicle_variants",
         {
