@@ -11,8 +11,12 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-app = FastAPI(title=settings.app_name, version="0.1.0", docs_url=None if settings.environment == "production" else "/docs", redoc_url=None)
-
+app = FastAPI(
+    title=settings.app_name,
+    version="0.1.0",
+    docs_url=None if settings.environment.lower() == "production" else "/docs",
+    redoc_url=None,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in settings.allowed_origins.split(",") if origin.strip()],
@@ -29,6 +33,6 @@ async def health() -> dict[str, str]:
 
 @app.get("/ready", tags=["system"])
 async def readiness() -> dict[str, str]:
-    # Database/auth readiness is intentionally not claimed until server credentials and
-    # a server-side JWT verifier are configured for the deployment environment.
+    # This endpoint deliberately does not claim DB/auth readiness until a server-side
+    # JWT verifier and deployment environment are configured.
     return {"status": "configuration-required", "service": "otoclinic-api"}
