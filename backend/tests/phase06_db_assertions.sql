@@ -64,6 +64,7 @@ begin
   select count(*) into v_count from public.audit_logs where request_id='phase06-document-register-01';
   if v_count<>1 then raise exception 'document registration must be audited'; end if;
 
+  perform set_config('request.jwt.claim.sub','20000000-0000-4000-8000-000000000003',false);
   begin
     perform public.oto_supplier_onboard(v_payload,'phase05-force-audit-failure');
     raise exception 'expected forced supplier audit failure';
