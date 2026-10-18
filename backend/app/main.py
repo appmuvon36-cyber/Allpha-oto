@@ -533,3 +533,204 @@ async def list_admin_products(
         access_token=identity["_access_token"],
     )
     return {"items": rows, "count": len(rows), "limit": 100}
+
+
+@app.get("/v1/supplier/profile", tags=["supplier"])
+async def get_supplier_profile(
+    identity: dict[str, Any] = Depends(get_current_identity),
+) -> dict[str, Any]:
+    user = identity.get("user")
+    user_id = user.get("id") if isinstance(user, dict) else None
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authenticated user required.")
+    rows = await supabase_get(
+        "suppliers",
+        {
+            "select": "id,owner_user_id,legal_name,display_name,supplier_type,status,contact_name,contact_email,contact_phone,address,business_registration_number,website_url,reviewed_at,review_note,created_at,updated_at",
+            "owner_user_id": f"eq.{user_id}",
+            "limit": "1",
+        },
+        access_token=identity["_access_token"],
+    )
+    return {"supplier": rows[0] if rows else None}
+
+
+@app.post("/v1/supplier/onboarding", tags=["supplier"])
+async def submit_supplier_onboarding(
+    request: SupplierOnboarding = Body(...),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    identity: dict[str, Any] = Depends(get_current_identity),
+) -> dict[str, Any]:
+    payload = request.model_dump(mode="json", exclude_none=True)
+    if payload.get("contact_email") and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", payload["contact_email"]):
+        raise HTTPException(status_code=422, detail="Supplier contact email is invalid.")
+    result = await supabase_supplier_rpc(
+        "oto_supplier_onboard",
+        {"p_payload": payload, "p_request_id": idempotency_key},
+        identity["_access_token"],
+    )
+    return {"result": result}
+
+
+@app.get("/v1/supplier/documents", tags=["supplier"])
+async def list_supplier_documents(
+    identity: dict[str, Any] = Depends(get_current_identity),
+) -> dict[str, Any]:
+    supplier = await get_owned_supplier(identity)
+    rows = await supabase_get(
+        "supplier_documents",
+        {
+            "select": "id,supplier_id,document_type,storage_path,original_filename,content_type,file_size_bytes,sha256,expires_at,status,review_note,reviewed_at,created_at,updated_at",
+            "supplier_id": f"eq.{supplier['id']}",
+            "order": "created_at.desc",
+            "limit": "100",
+        },
+        access_token=identity["_access_token"],
+    )
+    return {"items": rows, "count": len(rows)}
+
+
+@app.post("/v1/supplier/documents", tags=["supplier"])
+async def register_supplier_document(
+    request: SupplierDocumentRegistration = Body(...),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    identity: dict[str, Any] = Depends(get_current_identity),
+) -> dict[str, Any]:
+    supplier = await get_owned_supplier(identity)
+    payload = request.model_dump(mode="json", exclude_none=True)
+    result = await supabase_supplier_rpc(
+        "oto_supplier_document_register",
+        {"p_supplier_id": supplier["id"], "p_payload": payload, "p_request_id": idempotency_key},
+        identity["_access_token"],
+    )
+    return {"result": result}
+
+
+@app.get("/v1/supplier/offers", tags=["supplier"])
+async def list_supplier_offers(
+    identity: dict[str, Any] = Depends(get_current_identity),
+) -> dict[str, Any]:
+    supplier = await get_owned_supplier(identity)
+    rows = await supabase_get(
+        "supplier_offers",
+        {
+            "select": "id,supplier_id,product_id,supplier_sku,source_url,source_evidence,condition,unit_cost,asking_price,currency,stock_quantity,stock_checked_at,quote_expires_at,status,lead_time_days,minimum_order_quantity,warranty_days,last_verified_by,source_verified_at,created_at,updated_at",
+            "supplier_id": f"eq.{supplier['id']}",
+            "order": "updated_at.desc",
+            "limit": "100",
+        },
+        access_token=identity["_access_token"],
+    )
+    return {"items": rows, "count": len(rows)}
+
+
+@app.post("/v1/supplier/offers", tags=["supplier"])
+async def submit_supplier_offer(
+    request: SupplierOfferSubmission = Body(...),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    identity: dict[str, Any] = Depends(get_current_identity),
+) -> dict[str, Any]:
+    supplier = await get_owned_supplier(identity)
+    payload = request.model_dump(mode="json", exclude_none=True)
+    if payload.get("condition") not in PRODUCT_CONDITIONS:
+        raise HTTPException(status_code=422, detail="Supplier offer condition is invalid.")
+    if payload.get("source_url") and not payload["source_url"].lower().startswith(("https://", "http://")):
+        raise HTTPException(status_code=422, detail="Supplier source URL must use HTTP or HTTPS.")
+    result = await supabase_supplier_rpc(
+        "oto_supplier_offer_submit",
+        {"p_supplier_id": supplier["id"], "p_payload": payload, "p_request_id": idempotency_key},
+        identity["_access_token"],
+    )
+    return {"result": result}
+
+
+@app.get("/v1/admin/suppliers", tags=["supplier"])
+async def list_admin_suppliers(
+    status: str | None = Query(default=None, max_length=32),
+    identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "inventory_manager")),
+) -> dict[str, Any]:
+    allowed_statuses = {"pending_review", "active", "suspended", "rejected"}
+    if status and status not in allowed_statuses:
+        raise HTTPException(status_code=422, detail="Supplier status filter is invalid.")
+    params = {
+        "select": "id,owner_user_id,legal_name,display_name,supplier_type,status,contact_name,contact_email,contact_phone,address,business_registration_number,website_url,reviewed_by,reviewed_at,review_note,created_at,updated_at",
+        "order": "created_at.desc",
+        "limit": "200",
+    }
+    if status:
+        params["status"] = f"eq.{status}"
+    rows = await supabase_get("suppliers", params, access_token=identity["_access_token"])
+    return {"items": rows, "count": len(rows), "limit": 200}
+
+
+@app.get("/v1/admin/supplier-offers", tags=["supplier"])
+async def list_admin_supplier_offers(
+    status: str | None = Query(default=None, max_length=32),
+    supplier_id: UUID | None = None,
+    identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "inventory_manager")),
+) -> dict[str, Any]:
+    allowed_statuses = {"pending_review", "active", "unavailable", "rejected", "expired"}
+    if status and status not in allowed_statuses:
+        raise HTTPException(status_code=422, detail="Supplier offer status filter is invalid.")
+    params = {
+        "select": "id,supplier_id,product_id,supplier_sku,source_url,source_evidence,condition,unit_cost,asking_price,currency,stock_quantity,stock_checked_at,quote_expires_at,status,lead_time_days,minimum_order_quantity,warranty_days,last_verified_by,source_verified_at,created_at,updated_at,suppliers(id,legal_name,display_name,status),products(id,sku,name,part_number,condition,status)",
+        "order": "updated_at.desc",
+        "limit": "200",
+    }
+    if status:
+        params["status"] = f"eq.{status}"
+    if supplier_id:
+        params["supplier_id"] = f"eq.{supplier_id}"
+    rows = await supabase_get("supplier_offers", params, access_token=identity["_access_token"])
+    return {"items": rows, "count": len(rows), "limit": 200}
+
+
+@app.get("/v1/admin/supplier-documents", tags=["supplier"])
+async def list_admin_supplier_documents(
+    status: str | None = Query(default=None, max_length=32),
+    supplier_id: UUID | None = None,
+    identity: dict[str, Any] = Depends(require_roles("admin", "moderator", "catalog_editor")),
+) -> dict[str, Any]:
+    allowed_statuses = {"pending_review", "verified", "rejected", "expired"}
+    if status and status not in allowed_statuses:
+        raise HTTPException(status_code=422, detail="Supplier document status filter is invalid.")
+    params = {
+        "select": "id,supplier_id,document_type,storage_path,original_filename,content_type,file_size_bytes,sha256,expires_at,status,review_note,reviewed_by,reviewed_at,created_by,created_at,updated_at,suppliers(id,legal_name,display_name,status)",
+        "order": "created_at.desc",
+        "limit": "200",
+    }
+    if status:
+        params["status"] = f"eq.{status}"
+    if supplier_id:
+        params["supplier_id"] = f"eq.{supplier_id}"
+    rows = await supabase_get("supplier_documents", params, access_token=identity["_access_token"])
+    return {"items": rows, "count": len(rows), "limit": 200}
+
+
+@app.post("/v1/admin/supplier-mutations", tags=["supplier"])
+async def mutate_supplier_operations(
+    mutation: SupplierAdminMutation = Body(...),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    identity: dict[str, Any] = Depends(require_roles("admin", "moderator", "catalog_editor", "inventory_manager")),
+) -> dict[str, Any]:
+    allowed = {
+        "approve_supplier", "reject_supplier", "suspend_supplier",
+        "review_supplier_document", "approve_offer", "reject_offer", "expire_offer",
+    }
+    if mutation.action not in allowed:
+        raise HTTPException(status_code=422, detail="Unsupported supplier action.")
+    if len(str(mutation.payload)) > 20000:
+        raise HTTPException(status_code=413, detail="Supplier payload is too large.")
+    result = await supabase_supplier_rpc(
+        "oto_supplier_admin_mutate",
+        {
+            "p_action": mutation.action,
+            "p_supplier_id": str(mutation.supplier_id) if mutation.supplier_id else None,
+            "p_offer_id": str(mutation.offer_id) if mutation.offer_id else None,
+            "p_document_id": str(mutation.document_id) if mutation.document_id else None,
+            "p_payload": mutation.payload,
+            "p_request_id": idempotency_key,
+        },
+        identity["_access_token"],
+    )
+    return {"result": result}
