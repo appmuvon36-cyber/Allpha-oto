@@ -57,38 +57,60 @@ class AuthDependencyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_inactive_profile_is_forbidden(self):
         dependency = main.require_roles("admin")
-        identity = {
-            "user": {"id": "user-1"},
-            "profile": {"id": "user-1", "role": "admin", "is_active": False},
-            "role": "admin",
-        }
+        identity = {"user": {"id": "user-1"}, "profile": {"id": "user-1", "role": "admin", "is_active": False}, "role": "admin"}
         with self.assertRaises(HTTPException) as caught:
             await dependency(identity=identity)
         self.assertEqual(caught.exception.status_code, 403)
 
     async def test_disallowed_role_is_forbidden(self):
         dependency = main.require_roles("admin", "catalog_editor")
-        identity = {
-            "user": {"id": "user-2"},
-            "profile": {"id": "user-2", "role": "customer", "is_active": True},
-            "role": "customer",
-        }
+        identity = {"user": {"id": "user-2"}, "profile": {"id": "user-2", "role": "customer", "is_active": True}, "role": "customer"}
         with self.assertRaises(HTTPException) as caught:
             await dependency(identity=identity)
         self.assertEqual(caught.exception.status_code, 403)
 
     async def test_allowed_role_returns_identity(self):
         dependency = main.require_roles("admin", "catalog_editor")
-        identity = {
-            "user": {"id": "user-3"},
-            "profile": {"id": "user-3", "role": "Catalog_Editor", "is_active": True},
-            "role": "Catalog_Editor",
-        }
+        identity = {"user": {"id": "user-3"}, "profile": {"id": "user-3", "role": "Catalog_Editor", "is_active": True}, "role": "Catalog_Editor"}
         self.assertIs(await dependency(identity=identity), identity)
 
     def test_empty_role_allowlist_is_rejected(self):
         with self.assertRaises(ValueError):
             main.require_roles(" ", "")
+
+
+class ApiFeatureTests(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(main.app)
+        self.original_supabase_get = main.supabase_get
+
+    def tearDown(self):
+        main.app.dependency_overrides.clear()
+        main.supabase_get = self.original_supabase_get
+
+    def test_public_catalog_is_limited_to_published_rows(self):
+        captured = {}
+
+        async def fake_get(table, params, access_token=None):
+            captured.update(table=table, params=params, access_token=access_token)
+            return [{"id": "real-row-placeholder"}]
+
+        main.supabase_get = fake_get
+        response = self.client.get("/v1/catalog/products?q=brake&condition=used&limit=10")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 1)
+        self.assertEqual(captured["table"], "products")
+        self.assertEqual(captured["params"]["status"], "eq.published")
+        self.assertEqual(captured["params"]["condition"], "eq.used")
+        self.assertEqual(captured["params"]["limit"], "10")
+
+    def test_invalid_condition_is_rejected_before_database_call(self):
+        response = self.client.get("/v1/catalog/products?condition=unknown")
+        self.assertEqual(response.status_code, 422)
+
+    def test_vehicle_type_filter_is_validated(self):
+        response = self.client.get("/v1/vehicles/models?vehicle_type=spaceship")
+        self.assertEqual(response.status_code, 422)
 
 
 class ProtectedCatalogEndpointTests(unittest.TestCase):
@@ -104,10 +126,8 @@ class ProtectedCatalogEndpointTests(unittest.TestCase):
 
     def test_customer_role_is_denied_by_real_catalog_route(self):
         main.app.dependency_overrides[main.get_current_identity] = lambda: {
-            "user": {"id": "customer-1"},
-            "profile": {"id": "customer-1", "role": "customer", "is_active": True},
-            "role": "customer",
-            "_access_token": "customer-token",
+            "user": {"id": "customer-1"}, "profile": {"id": "customer-1", "role": "customer", "is_active": True},
+            "role": "customer", "_access_token": "customer-token",
         }
         response = self.client.get("/v1/admin/products")
         self.assertEqual(response.status_code, 403)
@@ -115,20 +135,15 @@ class ProtectedCatalogEndpointTests(unittest.TestCase):
     def test_catalog_editor_can_read_real_catalog_route_without_token_leak(self):
         rows = [{"id": "product-1", "sku": "SKU-1", "name": "Existing product", "status": "draft"}]
         main.app.dependency_overrides[main.get_current_identity] = lambda: {
-            "user": {"id": "staff-1"},
-            "profile": {"id": "staff-1", "role": "catalog_editor", "is_active": True},
-            "role": "catalog_editor",
-            "_access_token": "staff-session-token",
+            "user": {"id": "staff-1"}, "profile": {"id": "staff-1", "role": "catalog_editor", "is_active": True},
+            "role": "catalog_editor", "_access_token": "staff-session-token",
         }
         FakeAsyncClient.response = FakeResponse(200, rows)
         with patch.object(main.httpx, "AsyncClient", FakeAsyncClient):
             response = self.client.get("/v1/admin/products")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"items": rows, "count": 1, "limit": 100})
-        self.assertEqual(
-            FakeAsyncClient.last_request[1]["headers"]["Authorization"],
-            "Bearer staff-session-token",
-        )
+        self.assertEqual(FakeAsyncClient.last_request[1]["headers"]["Authorization"], "Bearer staff-session-token")
         me_response = self.client.get("/v1/auth/me")
         self.assertNotIn("_access_token", me_response.json())
 
