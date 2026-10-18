@@ -664,7 +664,7 @@ async def submit_supplier_offer(
 @app.get("/v1/admin/suppliers", tags=["supplier"])
 async def list_admin_suppliers(
     status: str | None = Query(default=None, max_length=32),
-    identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "inventory_manager")),
+    identity: dict[str, Any] = Depends(require_roles("admin", "moderator", "catalog_editor", "inventory_manager")),
 ) -> dict[str, Any]:
     allowed_statuses = {"pending_review", "active", "suspended", "rejected"}
     if status and status not in allowed_statuses:
@@ -684,7 +684,7 @@ async def list_admin_suppliers(
 async def list_admin_supplier_offers(
     status: str | None = Query(default=None, max_length=32),
     supplier_id: UUID | None = None,
-    identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "inventory_manager")),
+    identity: dict[str, Any] = Depends(require_roles("admin", "moderator", "catalog_editor", "inventory_manager")),
 ) -> dict[str, Any]:
     allowed_statuses = {"pending_review", "active", "unavailable", "rejected", "expired"}
     if status and status not in allowed_statuses:
