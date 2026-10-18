@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import { useEffect, useState } from "react";
 import { ArrowRight, CarFront, Search, ShieldCheck, Wrench, Bike, PackageSearch, CircleHelp } from "lucide-react";
@@ -43,10 +44,10 @@ export default function HomePage() {
   return <main className="min-h-screen">
     <header className="sticky top-0 z-20 border-b border-[var(--color-border)] bg-white/95 backdrop-blur">
       <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-        <a href="/" className="flex items-center gap-3" aria-label="OtoClinic beranda">
+        <Link href="/" className="flex items-center gap-3" aria-label="OtoClinic beranda">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-primary)] text-white"><Wrench size={22}/></span>
           <span><strong className="block text-lg font-extrabold tracking-tight">OtoClinic</strong><span className="block text-[10px] font-semibold uppercase tracking-[.15em] text-slate-500">Spare part otomotif</span></span>
-        </a>
+        </Link>
         <nav className="hidden items-center gap-6 text-sm font-semibold text-slate-600 md:flex"><a href="#katalog" className="hover:text-[var(--color-primary)]">Katalog</a><a href="#cara-kerja" className="hover:text-[var(--color-primary)]">Cara kerja</a><a href="#bantuan" className="hover:text-[var(--color-primary)]">Bantuan</a></nav>
         <a href="#katalog" className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-bold text-white hover:opacity-90">Cari spare part</a>
       </div>
