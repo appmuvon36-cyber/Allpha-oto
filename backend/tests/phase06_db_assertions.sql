@@ -17,6 +17,7 @@ declare
   v_result jsonb;
   v_supplier_id uuid;
   v_document_id uuid;
+  v_expired_document_id uuid;
   v_offer_id uuid;
   v_count integer;
   v_payload jsonb;
@@ -64,6 +65,19 @@ begin
   select count(*) into v_count from public.audit_logs where request_id='phase06-document-register-01';
   if v_count<>1 then raise exception 'document registration must be audited'; end if;
 
+  insert into storage.objects(bucket_id,name) values(
+    'supplier-verification-documents',
+    auth.uid()::text||'/'||v_supplier_id::text||'/expired-license.pdf'
+  );
+  v_result:=public.oto_supplier_document_register(v_supplier_id,jsonb_build_object(
+    'document_type','business_license',
+    'storage_path',auth.uid()::text||'/'||v_supplier_id::text||'/expired-license.pdf',
+    'original_filename','expired-license.pdf','content_type','application/pdf',
+    'file_size_bytes',2048,'sha256',repeat('b',64),
+    'expires_at',(now()-interval '1 day')::text
+  ),'phase06-document-expired-01');
+  v_expired_document_id:=(v_result#>>'{document,id}')::uuid;
+
   perform set_config('request.jwt.claim.sub','20000000-0000-4000-8000-000000000003',false);
   begin
     perform public.oto_supplier_onboard(v_payload,'phase05-force-audit-failure');
@@ -83,6 +97,18 @@ begin
   exception when sqlstate '42501' then
     if sqlerrm not like '%supplier_onboarding_role_required%' then raise; end if;
   end;
+  begin
+    perform public.oto_supplier_admin_mutate(
+      'review_supplier_document',null,null,v_expired_document_id,
+      jsonb_build_object('status','verified'),
+      'phase06-expired-document-review-01'
+    );
+    raise exception 'expected expired document verification to fail';
+  exception when sqlstate '22023' then
+    if sqlerrm not like '%expired_supplier_document_cannot_be_verified%' then raise; end if;
+  end;
+  select count(*) into v_count from public.supplier_documents where id=v_expired_document_id and status='pending_review';
+  if v_count<>1 then raise exception 'expired document must remain unverified'; end if;
   v_result:=public.oto_supplier_admin_mutate(
     'review_supplier_document',null,null,v_document_id,
     jsonb_build_object('status','verified'),
