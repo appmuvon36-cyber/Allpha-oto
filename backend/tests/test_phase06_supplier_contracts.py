@@ -216,6 +216,29 @@ class Phase06SupplierContractTests(unittest.TestCase):
         self.assertEqual(args[1]["p_offer_id"], offer_id)
         self.assertEqual(args[1]["p_payload"]["product_id"], product_id)
 
+    def test_supplier_audit_is_admin_only_paginated_and_excludes_payload(self):
+        self.identity["profile"]["role"] = "admin"
+        self.identity["role"] = "admin"
+        event = {
+            "id": str(uuid4()), "actor_user_id": self.user_id, "action": "supplier_offer_submit",
+            "entity_type": "supplier_offer", "entity_id": str(uuid4()),
+            "request_id": "phase06-offer-0001", "created_at": "2026-10-18T12:00:00+00:00",
+        }
+        with patch.object(api, "supabase_get", new_callable=AsyncMock) as get_rows:
+            get_rows.return_value = [event]
+            response = self.client.get("/v1/admin/supplier-audit?limit=10&offset=20")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["items"], [event])
+        self.assertEqual(response.json()["limit"], 10)
+        self.assertEqual(response.json()["offset"], 20)
+        get_rows.assert_awaited_once()
+        args = get_rows.await_args.args
+        self.assertEqual(args[0], "audit_logs")
+        self.assertEqual(args[1]["limit"], "10")
+        self.assertEqual(args[1]["offset"], "20")
+        self.assertNotIn("details", args[1]["select"])
+        self.assertEqual(get_rows.await_args.kwargs["access_token"], "test-only-token")
+
     def test_admin_supplier_mutation_rejects_unknown_action(self):
         self.identity["profile"]["role"] = "admin"
         self.identity["role"] = "admin"
