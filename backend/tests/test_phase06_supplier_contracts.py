@@ -216,6 +216,20 @@ class Phase06SupplierContractTests(unittest.TestCase):
         self.assertEqual(args[1]["p_offer_id"], offer_id)
         self.assertEqual(args[1]["p_payload"]["product_id"], product_id)
 
+    def test_admin_supplier_queue_supports_bounded_pagination(self):
+        self.identity["profile"]["role"] = "moderator"
+        self.identity["role"] = "moderator"
+        with patch.object(api, "supabase_get", new_callable=AsyncMock) as get_rows:
+            get_rows.return_value = []
+            response = self.client.get("/v1/admin/suppliers?limit=10&offset=20")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["limit"], 10)
+        self.assertEqual(response.json()["offset"], 20)
+        self.assertIsNone(response.json()["next_offset"])
+        args = get_rows.await_args.args
+        self.assertEqual(args[1]["limit"], "10")
+        self.assertEqual(args[1]["offset"], "20")
+
     def test_supplier_audit_is_admin_only_paginated_and_excludes_payload(self):
         self.identity["profile"]["role"] = "admin"
         self.identity["role"] = "admin"
