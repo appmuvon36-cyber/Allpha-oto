@@ -19,6 +19,7 @@ declare
   v_document_id uuid;
   v_expired_document_id uuid;
   v_offer_id uuid;
+  v_product_id uuid;
   v_count integer;
   v_payload jsonb;
 begin
@@ -120,6 +121,9 @@ begin
   );
   if v_result#>>'{supplier,status}'<>'active' then raise exception 'supplier should activate only after verified document'; end if;
 
+  insert into public.products(sku,slug,name,category,condition,status,retail_price,source_rights_evidence)
+  values('PHASE06-SP-100','phase06-sp-100','Fixture part candidate','fixture','new_aftermarket','draft',149000,'fixture-only')
+  returning id into v_product_id;
   perform set_config('request.jwt.claim.sub','20000000-0000-4000-8000-000000000001',false);
   v_payload:=jsonb_build_object(
     'supplier_sku','PHASE06-SP-100',
@@ -152,6 +156,16 @@ begin
   end;
 
   perform set_config('request.jwt.claim.sub','20000000-0000-4000-8000-000000000002',false);
+  v_result:=public.oto_supplier_offer_match_candidates(v_offer_id);
+  if v_result->>'automatic_linking'<>'false' then raise exception 'candidate matcher must not auto-link'; end if;
+  if jsonb_array_length(v_result->'candidates')<>1 then raise exception 'expected one exact SKU candidate'; end if;
+  if v_result#>>'{candidates,0,match_reason}'<>'exact_sku' then raise exception 'candidate match reason should be exact_sku'; end if;
+  v_result:=public.oto_supplier_admin_mutate(
+    'match_offer_product',null,v_offer_id,null,jsonb_build_object('product_id',v_product_id),
+    'phase06-offer-link-01'
+  );
+  if (v_result#>>'{offer,product_id}')::uuid<>v_product_id then raise exception 'manual candidate link failed'; end if;
+  if v_result#>>'{offer,status}'<>'pending_review' then raise exception 'candidate link must preserve review gate'; end if;
   v_result:=public.oto_supplier_admin_mutate('approve_offer',null,v_offer_id,null,'{}'::jsonb,'phase06-offer-approve-01');
   if v_result#>>'{offer,status}'<>'active' then raise exception 'valid offer review did not activate offer'; end if;
   if v_result#>>'{offer,source_verified_at}' is null then raise exception 'approved offer needs source verification timestamp'; end if;
