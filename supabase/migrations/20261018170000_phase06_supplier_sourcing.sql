@@ -60,6 +60,9 @@ create index if not exists supplier_documents_supplier_status_idx on public.supp
 create unique index if not exists supplier_offers_supplier_sku_live_uidx
   on public.supplier_offers(supplier_id,lower(btrim(supplier_sku)))
   where supplier_sku is not null and status in ('pending_review','active');
+create unique index if not exists supplier_offers_supplier_source_live_uidx
+  on public.supplier_offers(supplier_id,lower(btrim(source_url)))
+  where source_url is not null and supplier_sku is null and status in ('pending_review','active');
 
 alter table public.supplier_documents enable row level security;
 grant select on public.supplier_documents to authenticated;
