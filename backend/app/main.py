@@ -719,6 +719,8 @@ async def submit_supplier_offer(
 @app.get("/v1/admin/suppliers", tags=["supplier"])
 async def list_admin_suppliers(
     status: str | None = Query(default=None, max_length=32),
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0, le=10000),
     identity: dict[str, Any] = Depends(require_roles("admin", "moderator", "catalog_editor", "inventory_manager")),
 ) -> dict[str, Any]:
     allowed_statuses = {"pending_review", "active", "suspended", "rejected"}
@@ -727,18 +729,21 @@ async def list_admin_suppliers(
     params = {
         "select": "id,owner_user_id,legal_name,display_name,supplier_type,status,contact_name,contact_email,contact_phone,address,business_registration_number,website_url,reviewed_by,reviewed_at,review_note,created_at,updated_at",
         "order": "created_at.desc",
-        "limit": "200",
+        "limit": str(limit),
+        "offset": str(offset),
     }
     if status:
         params["status"] = f"eq.{status}"
     rows = await supabase_get("suppliers", params, access_token=identity["_access_token"])
-    return {"items": rows, "count": len(rows), "limit": 200}
+    return {"items": rows, "count": len(rows), "limit": limit, "offset": offset, "next_offset": offset + limit if len(rows) == limit else None}
 
 
 @app.get("/v1/admin/supplier-offers", tags=["supplier"])
 async def list_admin_supplier_offers(
     status: str | None = Query(default=None, max_length=32),
     supplier_id: UUID | None = None,
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0, le=10000),
     identity: dict[str, Any] = Depends(require_roles("admin", "moderator", "catalog_editor", "inventory_manager")),
 ) -> dict[str, Any]:
     allowed_statuses = {"pending_review", "active", "unavailable", "rejected", "expired"}
@@ -747,20 +752,23 @@ async def list_admin_supplier_offers(
     params = {
         "select": "id,supplier_id,product_id,supplier_sku,source_url,source_evidence,condition,unit_cost,asking_price,currency,stock_quantity,stock_checked_at,quote_expires_at,status,lead_time_days,minimum_order_quantity,warranty_days,last_verified_by,source_verified_at,created_at,updated_at,suppliers(id,legal_name,display_name,status),products(id,sku,name,part_number,condition,status)",
         "order": "updated_at.desc",
-        "limit": "200",
+        "limit": str(limit),
+        "offset": str(offset),
     }
     if status:
         params["status"] = f"eq.{status}"
     if supplier_id:
         params["supplier_id"] = f"eq.{supplier_id}"
     rows = await supabase_get("supplier_offers", params, access_token=identity["_access_token"])
-    return {"items": rows, "count": len(rows), "limit": 200}
+    return {"items": rows, "count": len(rows), "limit": limit, "offset": offset, "next_offset": offset + limit if len(rows) == limit else None}
 
 
 @app.get("/v1/admin/supplier-documents", tags=["supplier"])
 async def list_admin_supplier_documents(
     status: str | None = Query(default=None, max_length=32),
     supplier_id: UUID | None = None,
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0, le=10000),
     identity: dict[str, Any] = Depends(require_roles("admin", "moderator", "catalog_editor")),
 ) -> dict[str, Any]:
     allowed_statuses = {"pending_review", "verified", "rejected", "expired"}
@@ -769,14 +777,15 @@ async def list_admin_supplier_documents(
     params = {
         "select": "id,supplier_id,document_type,storage_path,original_filename,content_type,file_size_bytes,sha256,expires_at,status,review_note,reviewed_by,reviewed_at,created_by,created_at,updated_at,suppliers(id,legal_name,display_name,status)",
         "order": "created_at.desc",
-        "limit": "200",
+        "limit": str(limit),
+        "offset": str(offset),
     }
     if status:
         params["status"] = f"eq.{status}"
     if supplier_id:
         params["supplier_id"] = f"eq.{supplier_id}"
     rows = await supabase_get("supplier_documents", params, access_token=identity["_access_token"])
-    return {"items": rows, "count": len(rows), "limit": 200}
+    return {"items": rows, "count": len(rows), "limit": limit, "offset": offset, "next_offset": offset + limit if len(rows) == limit else None}
 
 
 @app.get("/v1/admin/supplier-offers/{offer_id}/candidates", tags=["supplier"])
