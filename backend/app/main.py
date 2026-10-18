@@ -819,3 +819,29 @@ async def mutate_supplier_operations(
         identity["_access_token"],
     )
     return {"result": result}
+
+
+@app.get("/v1/admin/supplier-audit", tags=["supplier"])
+async def list_supplier_audit(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10000),
+    identity: dict[str, Any] = Depends(require_roles("admin")),
+) -> dict[str, Any]:
+    rows = await supabase_get(
+        "audit_logs",
+        {
+            "select": "id,actor_user_id,action,entity_type,entity_id,request_id,created_at",
+            "entity_type": "in.(supplier,supplier_document,supplier_offer)",
+            "order": "created_at.desc",
+            "limit": str(limit),
+            "offset": str(offset),
+        },
+        access_token=identity["_access_token"],
+    )
+    return {
+        "items": rows,
+        "count": len(rows),
+        "limit": limit,
+        "offset": offset,
+        "next_offset": offset + limit if len(rows) == limit else None,
+    }
