@@ -2,8 +2,8 @@
 -- This schema is created in a disposable GitHub Actions PostgreSQL service, never production.
 create schema if not exists auth;
 create schema if not exists storage;
-do $ begin create role anon nologin; exception when duplicate_object then null; end $;
-do $ begin create role authenticated nologin; exception when duplicate_object then null; end $;
+do $role$ begin create role anon nologin; exception when duplicate_object then null; end $role$;
+do $role$ begin create role authenticated nologin; exception when duplicate_object then null; end $role$;
 create table auth.users (id uuid primary key, email text);
 create table storage.buckets (
   id text primary key, name text not null, public boolean not null default false,
@@ -14,7 +14,7 @@ create table storage.objects (
   unique(bucket_id,name)
 );
 create or replace function storage.foldername(name text) returns text[]
-language sql immutable as $ select string_to_array(name,'/') $;
+language sql immutable as $fn$ select string_to_array(name,'/') $fn$;
 create or replace function auth.uid() returns uuid
 language sql stable
 as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
@@ -38,9 +38,9 @@ create table public.user_profiles (
   is_active boolean not null default true
 );
 create or replace function public.oto_has_staff_role(allowed_roles public.oto_user_role[])
-returns boolean language sql stable security definer as $
+returns boolean language sql stable security definer as $role$
   select exists(select 1 from public.user_profiles p where p.id=auth.uid() and p.is_active=true and p.role=any(allowed_roles))
-$;
+$role$;
 create table public.products (
   id uuid primary key default gen_random_uuid(),
   sku text not null unique,
