@@ -2,12 +2,13 @@
 
 Brand: OtoClinic. Production database already contains a preliminary business schema. The implementation must reconcile with that live schema, not recreate it.
 
-## Phase 00 — Audit and reconcile (in progress)
-- Inspect repository, deployment, Supabase schemas, tables, enums, functions, triggers, grants, RLS, Storage, migrations, and advisors.
-- Keep a schema inventory and identify discrepancies between live DB and repository.
-- Never treat an empty migration listing as proof that the database has no schema.
-- Current observed tables include user_profiles, vehicle_makes, vehicle_models, vehicle_variants, products, product_fitments, suppliers, supplier_offers, inventory_ledger, audit_logs.
-- Security remediation applied: revoke EXECUTE on public.rls_auto_enable() from public, anon, authenticated. Re-run advisor and inspect function/trigger behavior before changing it further.
+## Phase 00 — Audit and reconcile (VERIFIED: baseline recorded)
+- Live repository, Railway services, Supabase schema, migration ledger, enums, indexes, triggers, RLS policies, function grants and security advisor findings are recorded in [PHASE_00_AUDIT.md](./PHASE_00_AUDIT.md).
+- Ten existing public business tables were observed; RLS is enabled on all ten. Queried business-table row counts were zero at audit time. No mock/seed production data was added.
+- Both live migration versions are recorded. The source file for the applied foundation migration is missing from the repository; this is explicitly documented and must be recovered from live catalog metadata before any future schema DDL. Do not reapply the foundation migration to production.
+- `public.rls_auto_enable()` EXECUTE remains revoked from public/anon/authenticated. `public.oto_has_staff_role(...)` is a reviewed advisor warning used by existing RLS policies; do not revoke/convert it without a policy-safe replacement.
+- No destructive schema changes, new database, RLS weakening, or compatibility-app deletion was performed.
+- Early-stage verification policy: focused configuration/schema inspection and relevant smoke checks only; defer broad unit/integration/E2E suites until the corresponding features exist.
 
 ## Phase 01 — Brand, product flows and acceptance
 - OtoClinic brand system; Indonesian UI and IDR.
