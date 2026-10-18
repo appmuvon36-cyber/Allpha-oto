@@ -4,10 +4,10 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, Field\nfrom pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -286,6 +286,103 @@ async def list_verified_product_fitments(product_id: UUID) -> dict[str, Any]:
     )
     return {"items": rows, "count": len(rows)}
 
+class CatalogMutation(BaseModel):
+    action: str = Field(min_length=1, max_length=40)
+    product_id: UUID | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+async def supabase_catalog_rpc(
+    action: str,
+    product_id: UUID | None,
+    payload: dict[str, Any],
+    request_id: str,
+    access_token: str,
+) -> Any:
+    supabase_url, anon_key = require_supabase_configuration()
+    headers = {
+        "apikey": anon_key,
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    body = {
+        "p_action": action,
+        "p_product_id": str(product_id) if product_id else None,
+        "p_payload": payload,
+        "p_request_id": request_id,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            response = await client.post(
+                f"{supabase_url}/rest/v1/rpc/oto_catalog_mutate",
+                headers=headers,
+                json=body,
+            )
+        if response.status_code in (401, 403):
+            raise HTTPException(status_code=403, detail="Catalog operation is not permitted.")
+        if response.status_code == 429 or response.status_code >= 500:
+            raise HTTPException(status_code=503, detail="Catalog service is temporarily unavailable.")
+        if response.status_code not in (200, 201):
+            # Map known database validation outcomes to safe client errors.
+            try:
+                db_error = response.json()
+                message = str(db_error.get("message", ""))
+                code = str(db_error.get("code", ""))
+            except (ValueError, AttributeError):
+                message, code = "", ""
+            if code == "P0002" or "not_found" in message:
+                raise HTTPException(status_code=404, detail="Catalog record was not found.")
+            if code == "42501":
+                raise HTTPException(status_code=403, detail="Catalog operation is not permitted for this role.")
+            if code in ("22023", "22P02", "23505", "23514", "23502"):
+                raise HTTPException(status_code=422, detail="Catalog operation failed validation.")
+            raise HTTPException(status_code=503, detail="Catalog operation could not be completed.")
+        return response.json()
+    except HTTPException:
+        raise
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail="Catalog service timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Could not reach catalog service.") from exc
+
+
+@app.get("/v1/admin/catalog/fitments", tags=["fitment"])
+async def list_admin_fitments(
+    product_id: UUID | None = None,
+    identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "moderator")),
+) -> dict[str, Any]:
+    params = {
+        "select": "id,product_id,variant_id,status,evidence_url,evidence_note,verified_by,verified_at,created_at,vehicle_variants(id,model_id,name,year_start,year_end,engine_code,transmission,vehicle_models(id,make_id,name,slug,vehicle_type,vehicle_makes(id,name,slug)))",
+        "order": "created_at.desc",
+        "limit": "200",
+    }
+    if product_id:
+        params["product_id"] = f"eq.{product_id}"
+    rows = await supabase_get("product_fitments", params, access_token=identity["_access_token"])
+    return {"items": rows, "count": len(rows)}
+
+
+@app.post("/v1/admin/catalog/mutations", tags=["catalog"])
+async def mutate_catalog(
+    mutation: CatalogMutation = Body(...),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "moderator")),
+) -> dict[str, Any]:
+    allowed = {
+        "create_product", "update_product", "submit_review", "approve_product",
+        "publish_product", "reject_product", "archive_product", "save_fitment", "review_fitment",
+    }
+    if mutation.action not in allowed:
+        raise HTTPException(status_code=422, detail="Unsupported catalog action.")
+    if len(str(mutation.payload)) > 20000:
+        raise HTTPException(status_code=413, detail="Catalog payload is too large.")
+    result = await supabase_catalog_rpc(
+        mutation.action, mutation.product_id, mutation.payload,
+        idempotency_key, identity["_access_token"],
+    )
+    return {"result": result}
+
 
 @app.get("/v1/admin/products", tags=["catalog"])
 async def list_admin_products(
@@ -295,7 +392,7 @@ async def list_admin_products(
     rows = await supabase_get(
         "products",
         {
-            "select": "id,sku,slug,name,description,brand,part_number,category,condition,status,currency,retail_price,created_at,updated_at",
+            "select": "id,sku,slug,name,description,brand,part_number,category,condition,condition_grade,package_quantity,warranty_days,status,currency,retail_price,source_rights_evidence,fitment_summary,published_at,created_at,updated_at",
             "order": "created_at.desc",
             "limit": "100",
         },
