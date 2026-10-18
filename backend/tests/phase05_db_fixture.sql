@@ -1,6 +1,20 @@
 -- Ephemeral PostgreSQL fixture for Phase 05 transaction integration tests only.
 -- This schema is created in a disposable GitHub Actions PostgreSQL service, never production.
 create schema if not exists auth;
+create schema if not exists storage;
+do $ begin create role anon nologin; exception when duplicate_object then null; end $;
+do $ begin create role authenticated nologin; exception when duplicate_object then null; end $;
+create table auth.users (id uuid primary key, email text);
+create table storage.buckets (
+  id text primary key, name text not null, public boolean not null default false,
+  file_size_limit bigint, allowed_mime_types text[]
+);
+create table storage.objects (
+  id uuid primary key default gen_random_uuid(), bucket_id text not null, name text not null,
+  unique(bucket_id,name)
+);
+create or replace function storage.foldername(name text) returns text[]
+language sql immutable as $ select string_to_array(name,'/') $;
 create or replace function auth.uid() returns uuid
 language sql stable
 as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
@@ -23,6 +37,10 @@ create table public.user_profiles (
   role public.oto_user_role not null,
   is_active boolean not null default true
 );
+create or replace function public.oto_has_staff_role(allowed_roles public.oto_user_role[])
+returns boolean language sql stable security definer as $
+  select exists(select 1 from public.user_profiles p where p.id=auth.uid() and p.is_active=true and p.role=any(allowed_roles))
+$;
 create table public.products (
   id uuid primary key default gen_random_uuid(),
   sku text not null unique,
@@ -44,6 +62,38 @@ create table public.products (
   created_by uuid,
   updated_by uuid,
   source_rights_evidence text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create table public.suppliers (
+  id uuid primary key default gen_random_uuid(),
+  owner_user_id uuid references auth.users(id) on delete set null,
+  legal_name text not null,
+  display_name text not null,
+  supplier_type text not null check (supplier_type in ('oem_distributor','aftermarket_distributor','supplier','workshop','reconditioner','dismantler','individual')),
+  status text not null default 'pending_review' check (status in ('pending_review','active','suspended','rejected')),
+  contact_name text,
+  contact_email text,
+  contact_phone text,
+  address jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create table public.supplier_offers (
+  id uuid primary key default gen_random_uuid(),
+  supplier_id uuid not null references public.suppliers(id) on delete restrict,
+  product_id uuid references public.products(id) on delete set null,
+  supplier_sku text,
+  source_url text,
+  source_evidence jsonb not null default '{}'::jsonb,
+  condition public.oto_product_condition not null,
+  unit_cost numeric check (unit_cost >= 0),
+  asking_price numeric check (asking_price >= 0),
+  currency char(3) not null default 'IDR' check (currency='IDR'),
+  stock_quantity integer not null default 0 check (stock_quantity >= 0),
+  stock_checked_at timestamptz,
+  quote_expires_at timestamptz,
+  status text not null default 'pending_review' check (status in ('pending_review','active','unavailable','rejected','expired')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
