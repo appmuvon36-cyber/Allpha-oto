@@ -1,0 +1,151 @@
+"""Phase 06 supplier API contracts; all external calls are mocked."""
+import unittest
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, patch
+from uuid import uuid4
+
+from fastapi.testclient import TestClient
+
+import app.main as api
+
+
+class Phase06SupplierContractTests(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(api.app)
+        self.user_id = str(uuid4())
+        self.identity = {
+            "user": {"id": self.user_id, "email": "supplier@example.invalid"},
+            "profile": {"role": "customer", "is_active": True},
+            "role": "customer",
+            "_access_token": "test-only-token",
+        }
+        api.app.dependency_overrides[api.get_current_identity] = lambda: self.identity
+
+    def tearDown(self):
+        api.app.dependency_overrides.clear()
+
+    def test_onboarding_requires_idempotency_key(self):
+        response = self.client.post(
+            "/v1/supplier/onboarding",
+            json={"legal_name": "Fixture Supplier", "display_name": "Fixture"},
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_onboarding_forwards_payload_and_caller_token(self):
+        result = {"supplier": {"id": str(uuid4()), "status": "pending_review"}, "replayed": False}
+        payload = {
+            "legal_name": "Fixture Supplier PT",
+            "display_name": "Fixture Parts",
+            "supplier_type": "supplier",
+            "contact_email": "ops@example.invalid",
+            "address": {"city": "Jakarta"},
+        }
+        with patch.object(api, "supabase_supplier_rpc", new_callable=AsyncMock) as rpc:
+            rpc.return_value = result
+            response = self.client.post(
+                "/v1/supplier/onboarding",
+                headers={"Idempotency-Key": "phase06-onboard-0001"},
+                json=payload,
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["result"], result)
+        rpc.assert_awaited_once()
+        args = rpc.await_args.args
+        self.assertEqual(args[0], "oto_supplier_onboard")
+        self.assertEqual(args[1]["p_payload"]["legal_name"], payload["legal_name"])
+        self.assertEqual(args[1]["p_request_id"], "phase06-onboard-0001")
+        self.assertEqual(args[2], "test-only-token")
+
+    def test_staff_role_cannot_self_onboard_as_supplier(self):
+        self.identity["profile"]["role"] = "catalog_editor"
+        self.identity["role"] = "catalog_editor"
+        with patch.object(api, "supabase_supplier_rpc", new_callable=AsyncMock) as rpc:
+            response = self.client.post(
+                "/v1/supplier/onboarding",
+                headers={"Idempotency-Key": "phase06-onboard-0002"},
+                json={"legal_name": "Fixture Supplier", "display_name": "Fixture"},
+            )
+        self.assertEqual(response.status_code, 403)
+        rpc.assert_not_awaited()
+
+    def test_supplier_offer_requires_source_evidence(self):
+        supplier_id = str(uuid4())
+        with patch.object(api, "supabase_get", new_callable=AsyncMock) as get_rows:
+            get_rows.return_value = [{"id": supplier_id, "status": "active", "owner_user_id": self.user_id}]
+            with patch.object(api, "supabase_supplier_rpc", new_callable=AsyncMock) as rpc:
+                response = self.client.post(
+                    "/v1/supplier/offers",
+                    headers={"Idempotency-Key": "phase06-offer-0001"},
+                    json={
+                        "supplier_sku": "SP-100",
+                        "source_evidence": {},
+                        "condition": "new_aftermarket",
+                        "unit_cost": "125000",
+                        "stock_quantity": 5,
+                        "quote_expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+                    },
+                )
+        self.assertEqual(response.status_code, 422)
+        rpc.assert_not_awaited()
+
+    def test_supplier_offer_requires_active_owned_supplier(self):
+        with patch.object(api, "supabase_get", new_callable=AsyncMock) as get_rows:
+            get_rows.return_value = []
+            response = self.client.get("/v1/supplier/offers")
+        self.assertEqual(response.status_code, 404)
+
+    def test_supplier_offer_forwards_quote_terms_and_token(self):
+        supplier_id = str(uuid4())
+        result = {"offer": {"id": str(uuid4()), "status": "pending_review"}, "replayed": False}
+        payload = {
+            "supplier_sku": "SP-100",
+            "source_url": "https://supplier.example.invalid/parts/SP-100",
+            "source_evidence": {"type": "supplier_quote", "reference": "Q-100"},
+            "condition": "new_aftermarket",
+            "unit_cost": "125000",
+            "asking_price": "149000",
+            "stock_quantity": 5,
+            "quote_expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+            "lead_time_days": 2,
+            "minimum_order_quantity": 1,
+            "warranty_days": 30,
+        }
+        with patch.object(api, "supabase_get", new_callable=AsyncMock) as get_rows:
+            get_rows.return_value = [{"id": supplier_id, "status": "active", "owner_user_id": self.user_id}]
+            with patch.object(api, "supabase_supplier_rpc", new_callable=AsyncMock) as rpc:
+                rpc.return_value = result
+                response = self.client.post(
+                    "/v1/supplier/offers",
+                    headers={"Idempotency-Key": "phase06-offer-0002"},
+                    json=payload,
+                )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["result"], result)
+        rpc.assert_awaited_once()
+        args = rpc.await_args.args
+        self.assertEqual(args[0], "oto_supplier_offer_submit")
+        self.assertEqual(args[1]["p_supplier_id"], supplier_id)
+        self.assertEqual(args[1]["p_payload"]["lead_time_days"], 2)
+        self.assertEqual(args[1]["p_request_id"], "phase06-offer-0002")
+        self.assertEqual(args[2], "test-only-token")
+
+    def test_admin_supplier_mutation_rejects_unknown_action(self):
+        self.identity["profile"]["role"] = "admin"
+        self.identity["role"] = "admin"
+        with patch.object(api, "supabase_supplier_rpc", new_callable=AsyncMock) as rpc:
+            response = self.client.post(
+                "/v1/admin/supplier-mutations",
+                headers={"Idempotency-Key": "phase06-admin-0001"},
+                json={"action": "publish_everything", "payload": {}},
+            )
+        self.assertEqual(response.status_code, 422)
+        rpc.assert_not_awaited()
+
+    def test_supplier_endpoint_requires_bearer_token(self):
+        api.app.dependency_overrides.clear()
+        response = self.client.get("/v1/supplier/profile")
+        self.assertEqual(response.status_code, 401)
+
+
+if __name__ == "__main__":
+    unittest.main()
