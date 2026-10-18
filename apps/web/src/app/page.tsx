@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import { useEffect, useState } from "react";
 import { ArrowRight, CarFront, Search, ShieldCheck, Wrench, Bike, PackageSearch, CircleHelp } from "lucide-react";
@@ -50,10 +51,10 @@ export default function HomePage() {
   return <main className="min-h-screen">
     <header className="sticky top-0 z-20 border-b border-[var(--color-border)] bg-white/95 backdrop-blur">
       <div className="mx-auto flex min-h-[72px] max-w-7xl items-center justify-between gap-2 px-3 sm:h-[72px] sm:gap-4 sm:px-6">
-        <a href="/" className="flex min-w-0 items-center gap-2 sm:gap-3" aria-label="OtoClinic beranda">
+        <Link href="/" className="flex min-w-0 items-center gap-2 sm:gap-3" aria-label="OtoClinic beranda">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary)] text-white"><Wrench size={22}/></span>
           <span><strong className="block text-lg font-extrabold tracking-tight">OtoClinic</strong><span className="block text-[9px] font-semibold uppercase tracking-[.1em] text-slate-500 sm:text-[10px] sm:tracking-[.15em]">Spare part otomotif</span></span>
-        </a>
+        </Link>
         <nav className="hidden items-center gap-6 text-sm font-semibold text-slate-600 md:flex"><a href="#katalog" className="hover:text-[var(--color-primary)]">Katalog</a><a href="#cara-kerja" className="hover:text-[var(--color-primary)]">Cara kerja</a><a href="#bantuan" className="hover:text-[var(--color-primary)]">Bantuan</a></nav>
         <div className="flex shrink-0 items-center gap-2"><PwaInstallPrompt/><a href="#katalog" className="hidden rounded-xl bg-[var(--color-primary)] px-3 py-2.5 text-xs font-bold text-white sm:inline-flex sm:px-4 sm:text-sm">Cari spare part</a></div>
       </div>
@@ -79,6 +80,6 @@ export default function HomePage() {
     </section>
     <section id="cara-kerja" className="border-y border-slate-200 bg-white"><div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-14"><h2 className="text-2xl font-extrabold">Belanja dengan informasi yang jelas</h2><div className="mt-6 grid gap-4 md:grid-cols-3">{[["01","Pilih kendaraan","Cocokkan merek, model, tahun, dan varian."],["02","Periksa kondisi","Bedakan barang baru, copotan, rekondisi, dan lainnya."],["03","Konfirmasi pesanan","Pastikan harga, ketersediaan, garansi, dan fitment sebelum pembayaran."]].map(s=><div key={s[0]} className="rounded-2xl border border-slate-200 p-5"><span className="text-sm font-extrabold text-[var(--color-primary)]">{s[0]}</span><h3 className="mt-3 font-bold">{s[1]}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{s[2]}</p></div>)}</div></div></section>
     <footer id="bantuan" className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div><p className="font-extrabold text-slate-800">OtoClinic</p><p className="mt-1">Marketplace spare part otomotif Indonesia.</p></div><p className="flex items-center gap-2"><CircleHelp size={15}/> Selalu konfirmasi fitment, harga, stok, dan garansi sebelum transaksi.</p><a href="#katalog" className="flex items-center gap-1 font-bold text-[var(--color-primary)]">Jelajahi katalog <ArrowRight size={14}/></a></footer>
-  <nav className="mobile-bottom-nav" aria-label="Navigasi utama"><a href="/" aria-current="page"><span>⌂</span><small>Beranda</small></a><a href="#katalog"><span>⌕</span><small>Katalog</small></a><a href="#permintaan"><span>＋</span><small>Request</small></a><a href="#favorit"><span>♡</span><small>Favorit</small></a><a href="#akun"><span>♙</span><small>Akun</small></a></nav><section id="permintaan" className="mx-4 mb-6 rounded-2xl border border-orange-200 bg-orange-50 p-4"><strong className="text-sm">Tidak menemukan spare part?</strong><p className="mt-1 text-xs leading-5 text-slate-600">Ajukan permintaan agar tim sourcing membantu mencarikan part yang sesuai.</p><a className="mt-3 inline-flex rounded-lg bg-[var(--color-primary)] px-3 py-2 text-xs font-bold text-white" href="mailto:sourcing@otoclinic.id?subject=Permintaan%20Spare%20Part">Ajukan permintaan</a></section>
+  <nav className="mobile-bottom-nav" aria-label="Navigasi utama"><Link href="/" aria-current="page"><span>⌂</span><small>Beranda</small></Link><a href="#katalog"><span>⌕</span><small>Katalog</small></a><a href="#permintaan"><span>＋</span><small>Request</small></a><a href="#favorit"><span>♡</span><small>Favorit</small></a><a href="#akun"><span>♙</span><small>Akun</small></a></nav><section id="permintaan" className="mx-4 mb-6 rounded-2xl border border-orange-200 bg-orange-50 p-4"><strong className="text-sm">Tidak menemukan spare part?</strong><p className="mt-1 text-xs leading-5 text-slate-600">Ajukan permintaan agar tim sourcing membantu mencarikan part yang sesuai.</p><a className="mt-3 inline-flex rounded-lg bg-[var(--color-primary)] px-3 py-2 text-xs font-bold text-white" href="mailto:sourcing@otoclinic.id?subject=Permintaan%20Spare%20Part">Ajukan permintaan</a></section>
   </main>;
 }
