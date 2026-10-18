@@ -116,6 +116,15 @@ async def get_current_identity(
         raise HTTPException(status_code=503, detail="Could not reach Supabase.") from exc
 
 
+async def require_active_profile(
+    identity: dict[str, Any] = Depends(get_current_identity),
+) -> dict[str, Any]:
+    profile = identity.get("profile")
+    if not isinstance(profile, dict) or profile.get("is_active") is not True:
+        raise HTTPException(status_code=403, detail="An active, provisioned user profile is required.")
+    return identity
+
+
 def require_roles(*allowed_roles: str) -> Callable[..., Any]:
     """Require an active profile and an explicit allowlisted role."""
     normalized_roles = frozenset(role.strip().lower() for role in allowed_roles if role.strip())
@@ -331,7 +340,7 @@ class SupplierOfferSubmission(BaseModel):
     product_id: UUID | None = None
     supplier_sku: str | None = Field(default=None, max_length=160)
     source_url: str | None = Field(default=None, max_length=2048)
-    source_evidence: dict[str, Any] = Field(min_length=1)
+    source_evidence: dict[str, Any] = Field(default_factory=dict)
     condition: str = Field(min_length=1, max_length=40)
     unit_cost: Decimal = Field(ge=0)
     asking_price: Decimal | None = Field(default=None, ge=0)
@@ -537,7 +546,7 @@ async def list_admin_products(
 
 @app.get("/v1/supplier/profile", tags=["supplier"])
 async def get_supplier_profile(
-    identity: dict[str, Any] = Depends(get_current_identity),
+    identity: dict[str, Any] = Depends(require_active_profile),
 ) -> dict[str, Any]:
     user = identity.get("user")
     user_id = user.get("id") if isinstance(user, dict) else None
@@ -559,8 +568,10 @@ async def get_supplier_profile(
 async def submit_supplier_onboarding(
     request: SupplierOnboarding = Body(...),
     idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
-    identity: dict[str, Any] = Depends(get_current_identity),
+    identity: dict[str, Any] = Depends(require_active_profile),
 ) -> dict[str, Any]:
+    if identity.get("role") not in {"customer", "supplier"}:
+        raise HTTPException(status_code=403, detail="Only customer or supplier accounts can submit supplier onboarding.")
     payload = request.model_dump(mode="json", exclude_none=True)
     if payload.get("contact_email") and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", payload["contact_email"]):
         raise HTTPException(status_code=422, detail="Supplier contact email is invalid.")
@@ -574,7 +585,7 @@ async def submit_supplier_onboarding(
 
 @app.get("/v1/supplier/documents", tags=["supplier"])
 async def list_supplier_documents(
-    identity: dict[str, Any] = Depends(get_current_identity),
+    identity: dict[str, Any] = Depends(require_active_profile),
 ) -> dict[str, Any]:
     supplier = await get_owned_supplier(identity)
     rows = await supabase_get(
