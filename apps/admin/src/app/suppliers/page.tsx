@@ -8,6 +8,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 type Supplier = { id:string; owner_user_id:string; legal_name:string; display_name:string; supplier_type:string; status:string; contact_name:string|null; contact_email:string|null; contact_phone:string|null; business_registration_number:string|null; website_url:string|null; created_at:string; review_note:string|null };
 type Offer = { id:string; supplier_id:string; product_id:string|null; supplier_sku:string|null; source_url:string|null; source_evidence:Record<string,unknown>; condition:string; unit_cost:number|null; asking_price:number|null; stock_quantity:number; stock_checked_at:string|null; quote_expires_at:string|null; status:string; lead_time_days:number; minimum_order_quantity:number; warranty_days:number; source_verified_at:string|null; suppliers?:{display_name:string;legal_name:string;status:string}|null };
+type AuditEvent = { id:string; actor_user_id:string; action:string; entity_type:string; entity_id:string|null; request_id:string|null; created_at:string };
 type Candidate = { product_id:string; sku:string|null; part_number:string|null; name:string; brand:string|null; condition:string; status:string; match_reason:string; match_score:number; automatic_linking:boolean; fitment_verified:boolean };
 type SupplierDocument = { id:string; supplier_id:string; document_type:string; storage_path:string; original_filename:string; content_type:string; file_size_bytes:number; sha256:string|null; expires_at:string|null; status:string; review_note:string|null; created_at:string; suppliers?:{display_name:string;legal_name:string;status:string}|null };
 
@@ -22,6 +23,7 @@ export default function SuppliersPage() {
   const [suppliers,setSuppliers]=useState<Supplier[]>([]);
   const [offers,setOffers]=useState<Offer[]>([]);
   const [documents,setDocuments]=useState<SupplierDocument[]>([]);
+  const [auditEvents,setAuditEvents]=useState<AuditEvent[]>([]);
   const [candidateResults,setCandidateResults]=useState<Record<string,Candidate[]>>({});
   const [candidateBusy,setCandidateBusy]=useState("");
   const [loading,setLoading]=useState(true);
@@ -43,18 +45,21 @@ export default function SuppliersPage() {
     setRole(profile.role);
     const headers={Authorization:"Bearer "+session.access_token};
     const canReadDocs=["admin","moderator","catalog_editor"].includes(profile.role??"");
-    const [supplierResponse,offerResponse,documentResponse]=await Promise.all([
+    const canReadAudit=profile.role==="admin";
+    const [supplierResponse,offerResponse,documentResponse,auditResponse]=await Promise.all([
       fetch(API+"/v1/admin/suppliers",{headers,cache:"no-store"}),
       fetch(API+"/v1/admin/supplier-offers",{headers,cache:"no-store"}),
       canReadDocs?fetch(API+"/v1/admin/supplier-documents?status=pending_review",{headers,cache:"no-store"}):Promise.resolve(null),
+      canReadAudit?fetch(API+"/v1/admin/supplier-audit?limit=50&offset=0",{headers,cache:"no-store"}):Promise.resolve(null),
     ]);
-    const responses=[supplierResponse,offerResponse,documentResponse].filter((r):r is Response=>r!==null);
-    const bodies=await Promise.all(responses.map(async r=>({ok:r.ok,status:r.status,body:await r.json().catch(()=>({}))})));
+    const readResponse=async(r:Response|null)=>r?({ok:r.ok,status:r.status,body:await r.json().catch(()=>({}))}):({ok:true,status:200,body:{items:[]}});
+    const bodies=await Promise.all([supplierResponse,offerResponse,documentResponse,auditResponse].map(readResponse));
     const failed=bodies.find(x=>!x.ok);
     if(failed){setError("Data supplier tidak dapat dimuat (HTTP "+failed.status+"). Periksa role, API, dan kebijakan database.");setLoading(false);return;}
     setSuppliers((bodies[0].body.items??[]) as Supplier[]);
     setOffers((bodies[1].body.items??[]) as Offer[]);
-    setDocuments(canReadDocs?((bodies[2]?.body.items??[]) as SupplierDocument[]):[]);
+    setDocuments(canReadDocs?((bodies[2].body.items??[]) as SupplierDocument[]):[]);
+    setAuditEvents(canReadAudit?((bodies[3].body.items??[]) as AuditEvent[]):[]);
     setLoading(false);
   },[supabase,router]);
 
@@ -62,6 +67,17 @@ export default function SuppliersPage() {
 
   async function mutate(action:string,target:{supplier_id?:string;offer_id?:string;document_id?:string},payload:Record<string,unknown>={}) {
     if(!token)return;
+    const prompts:Record<string,string>={
+      approve_supplier:"Setujui pemasok ini? Status akan menjadi aktif hanya jika dokumen valid sudah diverifikasi.",
+      reject_supplier:"Tolak pendaftaran pemasok ini? Alasan penolakan akan dicatat ke audit.",
+      suspend_supplier:"Tangguhkan pemasok aktif ini? Penawaran baru tidak dapat dikirim sampai status ditinjau kembali.",
+      review_supplier_document:payload.status==="verified"?"Verifikasi dokumen ini setelah memeriksa isinya?":"Tolak dokumen pemasok ini? Alasan penolakan akan dicatat ke audit.",
+      approve_offer:"Setujui penawaran ini? Pastikan bukti sumber, timestamp stok, dan quotation masih berlaku.",
+      reject_offer:"Tolak penawaran pemasok ini? Alasan penolakan akan dicatat ke audit.",
+      expire_offer:"Tandai penawaran ini kedaluwarsa sehingga tidak dipakai sebagai penawaran aktif?",
+      match_offer_product:"Tautkan penawaran ke kandidat katalog ini? Tautan manual akan tetap berstatus pending review dan tidak mengonfirmasi fitment.",
+    };
+    if(!window.confirm(prompts[action]??"Lanjutkan aksi supplier ini?"))return;
     setBusy(action+Object.values(target).join(""));setError("");setNotice("");
     try{
       const response=await fetch(API+"/v1/admin/supplier-mutations",{
@@ -117,6 +133,7 @@ export default function SuppliersPage() {
         <section className="mt-8"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold">Penawaran dan sourcing</h2><p className="text-xs text-slate-500">Harga IDR · stok perlu diperbarui setiap 24 jam</p></div>
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">{offers.length===0?<p className="p-6 text-sm text-slate-500">Belum ada penawaran pemasok.</p>:<div className="divide-y divide-slate-100">{offers.map(o=>{const stale=!o.stock_checked_at||Date.now()-new Date(o.stock_checked_at).getTime()>24*60*60*1000;const expired=!o.quote_expires_at||new Date(o.quote_expires_at).getTime()<=Date.now();return <article key={o.id} className="p-4 sm:p-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-bold">{o.supplier_sku??"SKU belum diberikan"}</h3><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold">{statusLabel[o.status]??o.status}</span>{stale&&<span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">Stok usang</span>}{expired&&<span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-800">Quotation kedaluwarsa</span>}</div><p className="mt-1 text-sm text-slate-500">{o.suppliers?.display_name??o.supplier_id} · {o.condition}</p><p className="mt-2 text-sm font-semibold">{money(o.unit_cost)} biaya supplier · {money(o.asking_price)} harga penawaran</p><p className="mt-1 text-xs text-slate-500">Stok: {o.stock_quantity} · Dilaporkan supplier: {date(o.stock_checked_at)} · Quote berakhir: {date(o.quote_expires_at)}</p><p className="mt-1 text-xs text-slate-500">Lead time: {o.lead_time_days} hari · MOQ: {o.minimum_order_quantity} · Garansi: {o.warranty_days} hari</p>{o.source_url&&<a href={o.source_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs font-semibold text-[var(--color-primary)] underline">Bukti sumber</a>}</div><div className="flex flex-wrap gap-2"><button disabled={candidateBusy===o.id} onClick={()=>void findCandidates(o.id)} className="min-h-10 rounded-lg border border-slate-200 px-3 text-xs font-bold disabled:opacity-50">{candidateBusy===o.id?"Mencocokkan…":"Cari kandidat katalog"}</button>{o.status==="pending_review"&&<><button disabled={!!busy||stale||expired} onClick={()=>void mutate("approve_offer",{offer_id:o.id})} className="min-h-10 rounded-lg bg-[var(--color-primary)] px-3 text-xs font-bold text-white disabled:opacity-50">Setujui</button><button disabled={!!busy||!reason.trim()} onClick={()=>void mutate("reject_offer",{offer_id:o.id},{reason})} className="min-h-10 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-700 disabled:opacity-50">Tolak</button></>}{o.status==="active"&&<button disabled={!!busy} onClick={()=>void mutate("expire_offer",{offer_id:o.id})} className="min-h-10 rounded-lg border border-slate-200 px-3 text-xs font-bold">Tandai kedaluwarsa</button>}</div></div>{candidateResults[o.id]&&<div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Kandidat identifikasi · tidak mengonfirmasi fitment</p>{candidateResults[o.id].length===0?<p className="mt-2 text-sm text-slate-500">Tidak ada SKU/nomor part yang cocok persis. Jangan menautkan secara otomatis.</p>:<div className="mt-2 space-y-2">{candidateResults[o.id].map(c=><div key={c.product_id} className="flex flex-col justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3 sm:flex-row sm:items-center"><div><p className="text-sm font-semibold">{c.name}</p><p className="mt-1 text-xs text-slate-500">SKU {c.sku??"—"} · Part {c.part_number??"—"} · {c.match_reason.replaceAll("_"," ")} · {c.status}</p><p className="mt-1 text-xs text-slate-500">{c.fitment_verified?"Ada fitment terverifikasi":"Fitment belum terverifikasi"}</p></div><button disabled={!!busy||o.product_id===c.product_id} onClick={()=>void mutate("match_offer_product",{offer_id:o.id},{product_id:c.product_id})} className="min-h-9 shrink-0 rounded-lg border border-slate-200 px-3 text-xs font-bold disabled:opacity-50">{o.product_id===c.product_id?"Sudah ditautkan":"Tautkan kandidat"}</button></div>)}</div>}</div>}</article>})}</div>}</div>
         </section>
+        {canReadAudit&&<section className="mt-8 rounded-2xl border border-slate-200 bg-white p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold">Audit supplier terbaru</h2><span className="text-xs text-slate-500">50 event terbaru · metadata saja</span></div>{auditEvents.length===0?<p className="mt-3 text-sm text-slate-500">Belum ada event audit supplier.</p>:<div className="mt-3 divide-y divide-slate-100">{auditEvents.map(event=><article key={event.id} className="py-3"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold">{event.action}</span><span className="text-xs text-slate-500">{event.entity_type}</span><span className="ml-auto text-xs text-slate-500">{date(event.created_at)}</span></div><p className="mt-1 break-all text-xs text-slate-500">Entity: {event.entity_id??"—"} · Actor: {event.actor_user_id}</p><p className="mt-1 break-all text-xs text-slate-500">Request: {event.request_id??"—"}</p></article>)}</div>}</section>}
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-4"><label className="block text-sm font-semibold">Alasan penolakan / penangguhan <span className="font-normal text-slate-500">(wajib untuk aksi tersebut)</span><input value={reason} onChange={e=>setReason(e.target.value)} maxLength={1000} placeholder="Tulis alasan yang akan masuk audit log" className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-[var(--color-primary)]"/></label><p className="mt-2 text-xs text-slate-500">Seluruh aksi mutasi menggunakan FastAPI, idempotency key, validasi status, dan audit database. Tidak ada perubahan status dari UI langsung.</p></section>
       </>}
       <footer className="mt-8 flex flex-wrap gap-4 border-t border-slate-200 pt-5 text-sm"><Link href="/admin" className="font-semibold text-[var(--color-primary)]">Workspace</Link><Link href="/catalog" className="font-semibold text-[var(--color-primary)]">Katalog & fitment</Link></footer>
