@@ -15,6 +15,7 @@ export default function CatalogPage(){
  const [products,setProducts]=useState<Product[]>([]); const [query,setQuery]=useState(""); const [status,setStatus]=useState("all");
  const [loading,setLoading]=useState(true); const [error,setError]=useState(""); const [role,setRole]=useState(""); const [selected,setSelected]=useState<Product|null>(null);
  const [fitments,setFitments]=useState<Fitment[]>([]); const [fitmentLoading,setFitmentLoading]=useState(false);
+ const [accessToken,setAccessToken]=useState(""); const [action,setAction]=useState("create_product"); const [actionProductId,setActionProductId]=useState(""); const [formName,setFormName]=useState(""); const [formSku,setFormSku]=useState(""); const [formSlug,setFormSlug]=useState(""); const [formCategory,setFormCategory]=useState(""); const [formCondition,setFormCondition]=useState("new_aftermarket"); const [formPrice,setFormPrice]=useState(""); const [formRights,setFormRights]=useState(""); const [actionReason,setActionReason]=useState(""); const [actionNotice,setActionNotice]=useState(""); const [actionBusy,setActionBusy]=useState(false);
  const load=useCallback(async()=>{
   setLoading(true);setError("");
   if(!supabase){setError("Supabase belum dikonfigurasi pada environment Admin.");setLoading(false);return;}
