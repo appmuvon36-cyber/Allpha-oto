@@ -32,7 +32,7 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 - Real active-user role tests, end-to-end session/RLS checks and final production authorization matrix are explicitly deferred to Phase 12 when real test accounts and valid sessions are available.
 - Privileged operations stay in backend; no service-role key in client. Do not weaken existing RLS.
 
-## Phase 05 — Catalog and fitment (READ API BASELINE IMPLEMENTED; LIFECYCLE WORK REMAINS)
+## Phase 05 — Catalog and fitment (READ API + ADMIN REVIEW WORKSPACE BASELINE; MUTATION LIFECYCLE REMAINS)
 - \`GET /v1/catalog/products\`: published-only search, category, condition, part-number, limit and offset filters.
 - \`GET /v1/vehicles/makes\`, \`/v1/vehicles/models\`, \`/v1/vehicles/variants\`: active vehicle taxonomy reads.
 - \`GET /v1/catalog/products/{product_id}/fitments\`: verified fitments only, joined to vehicle variant/model/make; current RLS remains the source of access control.
