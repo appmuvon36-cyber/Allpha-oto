@@ -1,8 +1,10 @@
 from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
+import hashlib
 import re
 from typing import Any
+from urllib.parse import quote
 from uuid import UUID
 
 import httpx
@@ -414,6 +416,49 @@ async def supabase_catalog_rpc(
         raise HTTPException(status_code=503, detail="Could not reach catalog service.") from exc
 
 
+async def verify_supplier_document_upload(
+    storage_path: str,
+    content_type: str,
+    declared_size: int,
+    expected_sha256: str | None,
+    access_token: str,
+) -> str:
+    """Download the private object through the caller's RLS token and verify its bytes."""
+    supabase_url, anon_key = require_supabase_configuration()
+    encoded_path = quote(storage_path, safe="/")
+    headers = {"apikey": anon_key, "Authorization": f"Bearer {access_token}"}
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.get(
+                f"{supabase_url}/storage/v1/object/supplier-verification-documents/{encoded_path}",
+                headers=headers,
+            )
+        if response.status_code in (401, 403):
+            raise HTTPException(status_code=403, detail="Supplier document storage access is not permitted.")
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Uploaded supplier document was not found.")
+        if response.status_code == 429 or response.status_code >= 500:
+            raise HTTPException(status_code=503, detail="Supplier document storage is temporarily unavailable.")
+        if response.status_code != 200:
+            raise HTTPException(status_code=422, detail="Supplier document could not be verified.")
+        actual_size = len(response.content)
+        actual_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if actual_size < 1 or actual_size > 10485760 or actual_size != declared_size:
+            raise HTTPException(status_code=422, detail="Uploaded file size does not match its declaration.")
+        if actual_type != content_type.lower():
+            raise HTTPException(status_code=422, detail="Uploaded file content type does not match its declaration.")
+        actual_sha256 = hashlib.sha256(response.content).hexdigest()
+        if expected_sha256 and actual_sha256.lower() != expected_sha256.lower():
+            raise HTTPException(status_code=422, detail="Uploaded file checksum does not match its bytes.")
+        return actual_sha256
+    except HTTPException:
+        raise
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail="Supplier document verification timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Could not verify supplier document storage object.") from exc
+
+
 async def supabase_supplier_rpc(
     function_name: str,
     body: dict[str, Any],
@@ -611,7 +656,16 @@ async def register_supplier_document(
     supplier = await get_owned_supplier(identity)
     if request.expires_at is not None and request.expires_at.utcoffset() is None:
         raise HTTPException(status_code=422, detail="Document expiry must include a timezone.")
+    user = identity.get("user")
+    user_id = user.get("id") if isinstance(user, dict) else None
+    expected_prefix = f"{user_id}/{supplier['id']}/"
+    if not user_id or not request.storage_path.startswith(expected_prefix) or any(part in {".", "..", ""} for part in request.storage_path.split("/")):
+        raise HTTPException(status_code=422, detail="Supplier document path must stay inside the caller's supplier folder.")
+    actual_sha256 = await verify_supplier_document_upload(
+        request.storage_path, request.content_type, request.file_size_bytes, request.sha256, identity["_access_token"]
+    )
     payload = request.model_dump(mode="json", exclude_none=True)
+    payload["sha256"] = actual_sha256
     result = await supabase_supplier_rpc(
         "oto_supplier_document_register",
         {"p_supplier_id": supplier["id"], "p_payload": payload, "p_request_id": idempotency_key},
