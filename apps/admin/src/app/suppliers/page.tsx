@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, ExternalLink, RefreshCw, ShieldAlert, Truck, X } from "lucide-react";
+import { ArrowLeft, Check, ExternalLink, RefreshCw, Truck, X } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 type Supplier = { id:string; owner_user_id:string; legal_name:string; display_name:string; supplier_type:string; status:string; contact_name:string|null; contact_email:string|null; contact_phone:string|null; business_registration_number:string|null; website_url:string|null; created_at:string; review_note:string|null };
