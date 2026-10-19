@@ -125,7 +125,12 @@ export default function AdminPage() {
         </div>
       </div>
     </header>
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+    <nav aria-label="Navigasi operasional" className="border-b border-slate-200 bg-white">
+      <div className="mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 py-3 sm:px-6">
+        {[["Ringkasan","/admin"],["Katalog & fitment","/catalog"],["Supplier","/suppliers"],["Inventori & pesanan","/inventory-orders"],["Pengguna","/users"],["Audit log","/audit"]].map(([label,href])=><Link key={href} href={href} className={"inline-flex min-h-10 shrink-0 items-center rounded-xl border px-3 text-xs font-bold transition "+(href==="/admin"?"border-orange-200 bg-orange-50 text-[var(--color-primary)]":"border-slate-200 text-slate-600 hover:border-orange-200 hover:bg-orange-50/50")}>{label}</Link>)}
+      </div>
+    </nav>
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[var(--color-primary)]">Operasional</p><h1 className="mt-2 text-3xl font-extrabold tracking-tight text-[var(--color-ink)]">Ringkasan operasional</h1><p className="mt-2 text-sm text-slate-500">Metrik live dihitung melalui FastAPI dengan akses sesuai role dan kebijakan database.</p></div>
         {authorized && overview && <span className="flex w-fit items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800"><ShieldCheck size={14}/> {roleLabels[overview.role] ?? overview.role}</span>}
