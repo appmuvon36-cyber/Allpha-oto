@@ -66,8 +66,8 @@ export default function CatalogPage(){
    const sha256=Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,"0")).join("");
    const {error:insertError}=await supabase.from("product_media").insert({product_id:mediaSelected.id,storage_path:storagePath,source_listing_url:null,source_name:"staff_file_upload",media_kind:"product_photo",alt_text:mediaAlt.trim(),content_type:mediaFile.type,byte_size:mediaFile.size,sha256,rights_status:mediaRights,rights_evidence_note:mediaEvidence.trim()||null,review_status:"pending",is_primary:false,captured_at:new Date().toISOString(),created_by:user.id});
    if(insertError){await supabase.storage.from("product-media").remove([storagePath]);throw new Error("Metadata gagal disimpan: "+insertError.message);}
-   setMediaNotice("Foto berhasil diunggah dari perangkat dan menunggu review. Foto belum ditampilkan ke pelanggan.");
    setMediaFile(null);setMediaAlt("");await loadMedia(mediaSelected);
+   setMediaNotice("Foto berhasil diunggah dari perangkat dan menunggu review. Foto belum ditampilkan ke pelanggan.");
   }catch(e){setMediaError(e instanceof Error?e.message:"Upload foto gagal.");}
   finally{setMediaBusy(false);}
  }
