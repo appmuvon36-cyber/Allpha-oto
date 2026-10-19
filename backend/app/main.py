@@ -245,6 +245,52 @@ async def get_current_user(
     return {key: value for key, value in identity.items() if not key.startswith("_")}
 
 
+async def public_product_media(product_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+    """Return only approved media and short-lived signed URLs from the private product-media bucket."""
+    if not product_ids:
+        return {}
+    media_rows = await supabase_get(
+        "product_media",
+        {
+            "select": "id,product_id,storage_path,source_url,alt_text,media_kind,is_primary",
+            "product_id": f"in.({','.join(product_ids)})",
+            "review_status": "eq.approved",
+            "rights_status": "in.(permission_granted,licensed,public_domain,user_owned)",
+            "order": "is_primary.desc,created_at.asc",
+            "limit": str(min(500, len(product_ids) * 10)),
+        },
+    )
+    supabase_url, anon_key = require_supabase_configuration()
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        for media in media_rows:
+            path = media.get("storage_path")
+            image_url = media.get("source_url") if not path else None
+            if path:
+                response = await client.post(
+                    f"{supabase_url}/storage/v1/object/sign/product-media/{quote(path, safe='/')}",
+                    headers={"apikey": anon_key, "Authorization": f"Bearer {anon_key}", "Content-Type": "application/json"},
+                    json={"expiresIn": 3600},
+                )
+                if response.status_code != 200:
+                    continue
+                signed = response.json().get("signedURL")
+                if not signed:
+                    continue
+                image_url = signed if signed.startswith("http") else f"{supabase_url}/storage/v1{signed if signed.startswith('/') else '/' + signed}"
+            if not image_url:
+                continue
+            product_id = str(media["product_id"])
+            grouped.setdefault(product_id, []).append({
+                "id": media["id"],
+                "url": image_url,
+                "alt_text": media["alt_text"],
+                "media_kind": media["media_kind"],
+                "is_primary": media["is_primary"],
+            })
+    return grouped
+
+
 @app.get("/v1/catalog/products", tags=["catalog"])
 async def list_public_products(
     q: str | None = Query(default=None, min_length=1, max_length=100),
@@ -290,6 +336,10 @@ async def list_public_products(
             return {"items": [], "count": 0, "limit": limit, "offset": offset}
         params["id"] = f"in.({','.join(product_ids)})"
     rows = await supabase_get("products", params)
+    media = await public_product_media([str(row["id"]) for row in rows if row.get("id")])
+    for row in rows:
+        row["images"] = media.get(str(row["id"]), [])
+        row["image_url"] = next((item["url"] for item in row["images"] if item["is_primary"]), row["images"][0]["url"] if row["images"] else None)
     return {"items": rows, "count": len(rows), "limit": limit, "offset": offset}
 
 
@@ -348,6 +398,9 @@ async def get_public_product(product_id: UUID) -> dict[str, Any]:
     )
     if not rows:
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan atau belum dipublikasikan.")
+    media = await public_product_media([str(rows[0]["id"])])
+    rows[0]["images"] = media.get(str(rows[0]["id"]), [])
+    rows[0]["image_url"] = next((item["url"] for item in rows[0]["images"] if item["is_primary"]), rows[0]["images"][0]["url"] if rows[0]["images"] else None)
     return {"product": rows[0]}
 
 
