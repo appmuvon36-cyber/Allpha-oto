@@ -55,3 +55,35 @@ Screenshot links are temporary signed evidence URLs and may expire.
 
 ## Current verdict
 **Not yet fully passed.** Public smoke and screenshot capture are documented, one direct-checkout 404 was found and fixed in source, and authenticated/interactive checks remain outstanding. Phase 10 remains deferred until this QA gate is closed.
+
+
+## Latest verification update — 19 October 2026, after deployment of commit `4bd88b6f1121769e2b4662471c56348ee9d7d870`
+
+### Deployment and CI evidence
+- Web deployment `ab5603ca-2f22-44eb-9acc-b040eb9f70e7`: **SUCCESS**, commit `4bd88b6f1121769e2b4662471c56348ee9d7d870`, branch `main`.
+- Admin deployment `245666ac-6991-4d31-9112-a6a3dc3f7751`: **SUCCESS**, commit `4bd88b6f1121769e2b4662471c56348ee9d7d870`, branch `main`.
+- GitHub Actions [OtoClinic CI run #281](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39186898533) for `4bd88b6`: **completed successfully**.
+- The checkout route fix was introduced in commit [`7339333`](https://github.com/appmuvon36-cyber/Allpha-oto/commit/73393331dfd832b40a516cb1e8b42cb991400a08); the later deployed commit includes it. Its dedicated Phase 05 contract/build run [#116](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39186817133) completed successfully.
+- Production check of `/checkout` now resolves to `/cart` and renders “Masuk untuk checkout”; the previous 404 is no longer observed. This route intentionally reuses the existing authenticated cart/checkout flow.
+
+### Latest interactive browser checks
+- Customer homepage: clicked category **Mesin**; the search textbox changed to `mesin`. Replacing the query with `filter` showed **“Produk tidak ditemukan”**, matching the currently empty live catalog.
+- Keyboard: Tab navigation moved focus between interactive controls; the browser reported a visible 3px orange/peach focus outline.
+- Browser back/forward: navigation returned between `/cart` and `/` without a reported route failure.
+- Vehicle selection: make dropdown contains only “Semua merek”; model and variant/year controls are disabled because the production vehicle taxonomy endpoint returns `items=[]`. A positive vehicle-selection path is therefore blocked by missing real data and was not fabricated.
+- Admin direct routes `/catalog`, `/suppliers`, `/inventory-orders`, `/users`, and `/audit`: all redirected unauthenticated browser sessions to `/login`; no protected content was exposed.
+- Direct `/checkout`: final URL `/cart`, sign-in-required checkout screen visible, no 404.
+- Viewport screenshots freshly captured after deployment:
+  - [360 screenshot](https://storage.googleapis.com/firecrawl-scrape-media/screenshot-53370882-8b34-451d-a776-03ad9448e1fd.png)
+  - [390 screenshot](https://storage.googleapis.com/firecrawl-scrape-media/screenshot-d5db5356-8e9b-4adc-8104-263d25c6ad69.png)
+  - [820 screenshot](https://storage.googleapis.com/firecrawl-scrape-media/screenshot-0b36ef48-d4ab-40f3-8bea-3c287f8a21cb.png)
+  - [1440 screenshot](https://storage.googleapis.com/firecrawl-scrape-media/screenshot-d9d2e68b-f700-4925-a35c-1bd4666ec3a6.png)
+- **Horizontal overflow limitation:** screenshot requests were made for all four target widths, but the interactive browser runtime does not support resizing its main viewport. Its measurable default viewport was 1905px with document/body scroll width 1905px and no overflowing elements at that default size. This is not sufficient to certify no horizontal overflow at 360/390/820/1440. Keep that check open rather than claiming it passed.
+- **Runtime errors/loading/error states:** no application page error was emitted by the interaction result, but the tool does not provide a reliable full console/network trace. Existing empty and unavailable states were observed; exhaustive forced loading/error-state testing remains open.
+- **Authenticated authorization matrix:** no approved test customer or staff credentials were provided in this QA context. No login attempts, customer orders, role mutations, or production writes were made. Unauthenticated guard tests do not prove that permitted staff roles work or that disallowed roles are denied after login.
+
+## Remaining blockers before Phase 10
+1. Run viewport-resized browser tests (or a local/CI browser harness with Playwright installed) to record exact `clientWidth` vs `scrollWidth` at 360, 390, 820, and 1440, including console/network errors.
+2. Repeat direct-route, loading, error, empty, keyboard and back/forward checks across all customer routes and all Admin operational routes.
+3. With approved test identities, test customer login, real vehicle selection/product/cart/checkout/order path, plus staff role-allowed and role-denied behavior. Current empty production taxonomy/catalog prevents positive commerce-path verification without approved non-production fixtures or real approved catalog data.
+4. Keep the phase gate **PARTIAL** until the above evidence is recorded. Phase 10 remains deferred.
