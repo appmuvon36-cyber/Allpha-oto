@@ -35,3 +35,9 @@
 
 ## Important known limitation
 The MagicPath customer component contains sample product records and notices that the content is a prototype. It is a visual reference only until wired to production data. The Super Admin screen also must be checked for role enforcement and must not expose protected records before authorization.
+
+## Production integration progress — 19 October 2026
+- Customer PWA source now includes a category-first mobile section whose actions drive the existing live API search; vehicle selectors and product/catalog states remain backed by FastAPI.
+- Super Admin source includes quick navigation to existing operational routes. Metrics remain fetched through the authenticated overview endpoint.
+- The MagicPath sample product/KPI arrays are not copied into production. Prototype remains visual reference; no product, stock, price, fitment, or audit records are fabricated.
+- Source integration commits are recorded in `docs/implementation/PHASES.md`. Production deployment and responsive QA remain pending until checked against the exact latest commit.
