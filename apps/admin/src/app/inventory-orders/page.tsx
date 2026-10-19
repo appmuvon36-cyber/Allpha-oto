@@ -111,6 +111,18 @@ export default function InventoryOrdersPage() {
     finally { setBusy(""); }
   }
 
+  async function expireReservations() {
+    if (!window.confirm("Batalkan pesanan belum dibayar yang reservasinya sudah kedaluwarsa dan lepaskan stok yang dicadangkan?")) return;
+    setBusy("expire-reservations"); setError(""); setNotice("");
+    try {
+      const result = await api("/v1/admin/inventory/expire-reservations", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() } });
+      const data = result.result ?? {};
+      setNotice((data.cancelled_orders ?? 0) + " pesanan dibatalkan; " + (data.released_reservations ?? 0) + " reservasi stok dilepaskan.");
+      await load();
+    } catch (e) { setError(e instanceof Error ? e.message : "Pembersihan reservasi gagal."); }
+    finally { setBusy(""); }
+  }
+
   const tabs: { id: Tab; name: string; icon: typeof Boxes }[] = [
     { id: "inventory", name: "Inventori", icon: Boxes }, { id: "orders", name: "Pesanan", icon: Truck },
     { id: "payments", name: "Pembayaran", icon: CreditCard }, { id: "returns", name: "Retur & Refund", icon: RotateCcw },
