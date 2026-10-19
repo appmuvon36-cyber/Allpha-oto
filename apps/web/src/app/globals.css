@@ -25,3 +25,36 @@
 @media(min-width:768px){
   #kategori button:hover{transform:translateY(-1px)}
 }
+
+
+/* Storefront redesign: commerce-first, mobile-first, no landing-page hero */
+.store-promo-banner{min-height:208px;background:linear-gradient(112deg,#101b2b 0%,#18344a 56%,#ef5b2a 150%);color:#fff;isolation:isolate}
+.store-promo-banner:before{content:"";position:absolute;inset:0;z-index:-1;background:radial-gradient(ellipse at 82% 50%,#ef5b2a55,transparent 42%),linear-gradient(90deg,#101b2b 0%,#101b2bde 46%,#101b2b20 100%)}
+.store-promo-art{position:absolute;right:0;top:0;bottom:0;width:44%;overflow:hidden;pointer-events:none}
+.promo-orbit{position:absolute;right:-18%;top:50%;aspect-ratio:1;width:95%;border:1px solid #ffffff2c;border-radius:50%;transform:translateY(-50%)}
+.promo-orbit-two{right:-3%;width:68%;border-color:#ffffff20}
+.promo-part{position:absolute;display:grid;place-items:center;border:1px solid #ffffff40;background:#ffffff19;color:#fff;box-shadow:0 16px 40px #050d1830;backdrop-filter:blur(8px)}
+.promo-part-disc{right:24%;top:24%;width:94px;height:94px;border-radius:28px;transform:rotate(-10deg)}
+.promo-part-shield{right:12%;top:17%;width:48px;height:48px;border-radius:16px;background:#ef5b2a}
+.promo-part-box{right:18%;bottom:17%;width:60px;height:60px;border-radius:19px;transform:rotate(9deg)}
+.store-search{scroll-margin-top:84px}
+.collection-rail{scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.collection-rail::-webkit-scrollbar{display:none}
+.collection-tile{scroll-margin-top:88px;transition:border-color .15s ease,transform .15s ease}
+.collection-tile:hover{border-color:#fdba9b;transform:translateY(-1px)}
+@media(max-width:520px){
+ .store-promo-banner{min-height:226px}
+ .store-promo-copy{padding:18px 15px;max-width:78%}
+ .store-promo-copy h1{font-size:23px;line-height:1.15}
+ .store-promo-copy p{font-size:11px;line-height:1.5}
+ .store-promo-art{width:42%;opacity:.92}
+ .promo-part-disc{right:7%;top:34%;width:66px;height:66px;border-radius:21px}
+ .promo-part-disc svg{width:34px;height:34px}
+ .promo-part-shield{right:0;top:23%;width:35px;height:35px;border-radius:12px}
+ .promo-part-shield svg{width:19px;height:19px}
+ .promo-part-box{right:4%;bottom:12%;width:43px;height:43px;border-radius:14px}
+ .promo-part-box svg{width:22px;height:22px}
+ .promo-orbit{right:-40%;width:135%}
+ .promo-orbit-two{right:-20%;width:95%}
+}
+@media(prefers-reduced-motion:reduce){.collection-tile{transition:none}.collection-tile:hover{transform:none}}
