@@ -96,7 +96,7 @@ begin
   if (select b.reserved from public.inventory_balances b where b.product_id='07000000-0000-4000-8000-000000000003'::uuid)<>0 then raise exception 'phase07 expired reservation remained reserved'; end if;
   result:=public.oto_expire_reservations('phase07-expire-reservations-01');
   if result->>'replayed'<>'true' then raise exception 'phase07 reservation expiry retry was not idempotent'; end if;
-end $;
+end $$;
 
 do $$
 begin
