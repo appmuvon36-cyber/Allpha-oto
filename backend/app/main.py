@@ -854,3 +854,8 @@ async def list_supplier_audit(
         "offset": offset,
         "next_offset": offset + limit if len(rows) == limit else None,
     }
+
+
+# Phase 07 transaction endpoints are mounted after the shared auth/data helpers.
+from app.phase07 import router as phase07_router
+app.include_router(phase07_router)
