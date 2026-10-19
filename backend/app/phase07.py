@@ -43,7 +43,7 @@ class OrderMutation(BaseModel):
 
 
 async def phase07_rpc(function_name: str, body: dict[str, Any], token: str) -> Any:
-    if function_name not in {"oto_inventory_mutate", "oto_order_mutate"}:
+    if function_name not in {"oto_inventory_mutate", "oto_order_mutate", "oto_expire_reservations"}:
         raise HTTPException(status_code=422, detail="Unsupported transaction operation.")
     url, anon_key = require_supabase_configuration()
     headers = {
@@ -360,3 +360,16 @@ async def mutate_order(
     if len(str(mutation.payload)) > 20000:
         raise HTTPException(status_code=413, detail="Order payload is too large.")
     return {"result": await order_rpc(mutation.action, order_id, mutation.payload, idempotency_key, identity)}
+
+
+@router.post("/v1/admin/inventory/expire-reservations", tags=["inventory"])
+async def expire_inventory_reservations(
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    identity: dict[str, Any] = Depends(require_roles("admin", "inventory_manager", "order_manager")),
+) -> dict[str, Any]:
+    result = await phase07_rpc(
+        "oto_expire_reservations",
+        {"p_request_id": idempotency_key},
+        identity["_access_token"],
+    )
+    return {"result": result}
