@@ -119,5 +119,7 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019003323_phase07_idempotency_rls_guard.sql
       - name: Apply Phase 07 checkout address bounds
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019003442_phase07_checkout_address_bounds.sql
+      - name: Apply Phase 07 shipping fee guard
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019003521_phase07_shipping_fee_guard.sql
       - name: Verify Phase 07 atomic stock, checkout, payment, fulfillment, return and refund
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/phase07_db_assertions.sql
