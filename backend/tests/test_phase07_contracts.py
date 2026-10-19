@@ -36,7 +36,7 @@ class Phase07ContractTests(unittest.TestCase):
         response = self.client.post(
             "/v1/checkout",
             json={"items": [{"product_id": "00000000-0000-0000-0000-000000000001", "quantity": 1}],
-                  "shipping_address": {"recipient_name": "Test User", "phone": "081234567890", "address": "Jalan Test 123"}},
+                  "shipping_address": {"recipient_name": "Test User", "phone": "081234567890", "address": "Jalan Test 123", "city": "Bogor", "province": "Jawa Barat"}},
             headers={"Idempotency-Key": "phase07-checkout-test-001"},
         )
         self.assertEqual(response.status_code, 401)
