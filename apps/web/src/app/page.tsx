@@ -17,6 +17,7 @@ const conditionLabels: Record<string,string> = {
 
 export default function HomePage() {
   const [query, setQuery] = useState("");
+  const [selectedCategory,setSelectedCategory]=useState("");
   const [products, setProducts] = useState<Product[]>([]);
   const [categories,setCategories]=useState<Category[]>([]);
   const [categoryError,setCategoryError]=useState("");
@@ -52,10 +53,10 @@ export default function HomePage() {
   },[modelId]);
   useEffect(() => {
     let active=true;setLoading(true);setError("");
-    const params=new URLSearchParams({limit:"24"}); if(query.trim())params.set("q",query.trim()); if(variantId)params.set("variant_id",variantId);
+    const params=new URLSearchParams({limit:"24"}); if(query.trim())params.set("q",query.trim()); if(selectedCategory)params.set("category",selectedCategory); if(variantId)params.set("variant_id",variantId);
     fetch(API+"/v1/catalog/products?"+params.toString()).then(r=>{if(!r.ok)throw new Error();return r.json()}).then(d=>{if(active)setProducts((d.items??[]) as Product[])}).catch(()=>{if(active){setProducts([]);setError("Katalog belum dapat dimuat. Silakan coba kembali.")}}).finally(()=>{if(active)setLoading(false)});
     return ()=>{active=false};
-  },[query,variantId]);
+  },[query,variantId,selectedCategory]);
   async function addToCart(productId:string){
     setCartBusy(productId);setCartNotice("");
     try{
@@ -110,7 +111,7 @@ export default function HomePage() {
     </section>
     <section id="kategori" className="mx-auto max-w-7xl px-4 pt-7 sm:px-6 sm:pt-10">
       <div className="flex items-end justify-between gap-3"><div><p className="text-[11px] font-extrabold uppercase tracking-[.16em] text-[var(--color-primary)]">Kategori spare part</p><h2 className="mt-1 text-xl font-extrabold tracking-tight sm:text-2xl">Belanja berdasarkan kategori</h2></div><span className="hidden text-xs text-slate-500 sm:block">Pilih kategori untuk mencari katalog</span></div>
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 sm:gap-3">{categories.map((item,index)=><button key={item.id} type="button" onClick={()=>{setQuery(item.name);document.getElementById("katalog")?.scrollIntoView({behavior:"smooth"});}} className="flex min-h-[94px] flex-col items-start justify-center rounded-2xl border border-slate-200 bg-white p-3 text-left transition hover:border-orange-200 hover:bg-orange-50/50 sm:min-h-[112px] sm:p-4"><span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-xl bg-orange-50 text-lg text-[var(--color-primary)] sm:h-11 sm:w-11 sm:text-xl">{["⚙","◉","ϟ","▧","◈","▤"][index%6]}</span><span className="mt-2 text-xs font-extrabold sm:text-sm">{item.name}</span><span className="mt-1 text-[10px] text-slate-500">{item.vehicle_scope==="all"?"Semua kendaraan":item.vehicle_scope==="motorcycle"?"Motor":item.vehicle_scope==="car"?"Mobil":"Komersial"}</span></button>)}</div>{categoryError&&<p role="status" className="mt-3 text-xs text-amber-700">{categoryError}</p>}{!categoryError&&categories.length===0&&<p className="mt-3 text-sm text-slate-500">Belum ada kategori aktif.</p>}
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 sm:gap-3">{categories.map((item,index)=><button key={item.id} type="button" onClick={()=>{setSelectedCategory(item.name);setQuery("");document.getElementById("katalog")?.scrollIntoView({behavior:"smooth"});}} className="flex min-h-[94px] flex-col items-start justify-center rounded-2xl border border-slate-200 bg-white p-3 text-left transition hover:border-orange-200 hover:bg-orange-50/50 sm:min-h-[112px] sm:p-4"><span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-xl bg-orange-50 text-lg text-[var(--color-primary)] sm:h-11 sm:w-11 sm:text-xl">{["⚙","◉","ϟ","▧","◈","▤"][index%6]}</span><span className="mt-2 text-xs font-extrabold sm:text-sm">{item.name}</span><span className="mt-1 text-[10px] text-slate-500">{item.vehicle_scope==="all"?"Semua kendaraan":item.vehicle_scope==="motorcycle"?"Motor":item.vehicle_scope==="car"?"Mobil":"Komersial"}</span></button>)}</div>{categoryError&&<p role="status" className="mt-3 text-xs text-amber-700">{categoryError}</p>}{!categoryError&&categories.length===0&&<p className="mt-3 text-sm text-slate-500">Belum ada kategori aktif.</p>}
     </section>
     <section id="katalog" className="mx-auto max-w-7xl px-4 py-7 sm:px-6 sm:py-10">
       <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end"><div><p className="text-[10px] font-extrabold uppercase tracking-[.16em] text-[var(--color-primary)]">Katalog terverifikasi</p><h2 className="mt-1 text-xl font-black tracking-tight sm:text-2xl">Semua produk</h2><p className="mt-1 text-xs text-slate-500 sm:text-sm">Data live dari katalog publik OtoClinic. Tidak ada produk contoh.</p></div><span className="text-[10px] text-slate-500 sm:text-xs">Harga, stok, dan kecocokan perlu dikonfirmasi.</span></div>
