@@ -86,6 +86,13 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 - Focused API tests cover published detail, missing/unpublished detail, and invalid UUID. Authenticated RLS/IDOR/session E2E remains Phase 12.
 - Verified CI: [OtoClinic CI #39185097017](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39185097017) and [Phase 05 contract/build #39185067815](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39185067815) passed. API deployment `71ab3e3d-42af-4cdb-9700-106ff197f516` and Web deployment `26218509-0f97-4280-b03f-2c48b2a4e919` succeeded on commit `609b4eaf848871640b0b6eb8571b0502b4901674`. Public route smoke and unauthenticated order 401 guard passed; live catalog/transaction tables remained empty.\n- Implementation and verification record: [PHASE_09_CUSTOMER_PWA.md](./PHASE_09_CUSTOMER_PWA.md).
 
+## UI/UX Refactor — MagicPath Integration (IMPLEMENTED IN SOURCE; DEPLOYMENT/QA VERIFICATION IN PROGRESS)
+- Applied the accepted MagicPath design direction to the existing Customer PWA homepage without replacing its live API behavior: category-first discovery actions submit real search terms, vehicle taxonomy remains loaded from FastAPI, product cards remain published-catalog API results, and existing cart mutations still use authenticated FastAPI calls with idempotency keys.
+- Added a responsive operations navigation row to the existing Super Admin dashboard, linking to existing catalog, supplier, inventory/order, user, and audit routes; dashboard metrics and product rows remain sourced from the authorized overview API.
+- Refined shared web/admin styling for mobile touch targets, scroll anchors, reduced-motion behavior, card and catalog responsiveness, and the existing OtoClinic design tokens. No new dependencies, schema migrations, production seed data, or replacement app/database were introduced.
+- Source commits: `a36e4971bc97c26e28ae9d7ccb89a058c1fec46b` (customer homepage), `602326903cca57c1392f124aeab71b9bbee29d6e` (customer styles), `7ef2ef139e2b5ab8e1680cacb17f11cbb1c462da` (admin navigation), `425d031d2ac00db801087656843887e0b999e5d6` (admin styles).
+- Remaining release gate: confirm CI/build for the exact source commits, deploy the web and admin services from the updated `main`, smoke-test public routes, and manually verify mobile/desktop visual behavior. Do not mark the refactor fully complete until this evidence is collected.
+
 ## Phase 10 — AI and search (NOT IMPLEMENTED)
 - Part number normalization, evidence-backed candidate search, confidence/uncertainty.
 - AI cannot independently publish uncertain fitment, price, or product data.
