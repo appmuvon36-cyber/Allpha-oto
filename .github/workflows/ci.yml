@@ -111,5 +111,7 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/phase06_db_assertions.sql
       - name: Apply Phase 07 inventory and order lifecycle migration
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019002354_phase07_inventory_order_lifecycle.sql
+      - name: Apply Phase 07 reservation expiry migration
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019003036_phase07_reservation_expiry.sql
       - name: Verify Phase 07 atomic stock, checkout, payment, fulfillment, return and refund
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/phase07_db_assertions.sql
