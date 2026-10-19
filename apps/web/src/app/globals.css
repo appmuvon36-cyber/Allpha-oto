@@ -8,3 +8,20 @@
 .pwa-install-wrap{position:relative}.pwa-install-button{height:38px;display:flex;align-items:center;gap:5px;padding:0 10px;border:0;border-radius:11px;background:#ef5b2a;color:white;font-size:11px;font-weight:850;white-space:nowrap}.pwa-install-help{position:absolute;z-index:70;top:calc(100% + 10px);right:0;width:min(300px,calc(100vw - 28px));padding:16px;border:1px solid #e2e8f0;border-radius:15px;background:white;box-shadow:0 12px 40px #101b2b24;color:#17202a}.pwa-install-help strong{display:block;margin-top:7px;font-size:14px}.pwa-install-help p{font-size:12px;line-height:1.6;color:#64748b;margin:8px 0 0}.pwa-help-close{position:absolute;right:9px;top:9px;border:0;background:#f1f5f9;border-radius:8px;width:28px;height:28px;display:grid;place-items:center}
 @media(min-width:768px){.store-shell{padding-bottom:0}.mobile-bottom-nav{display:none}.pwa-install-button{font-size:12px;padding:0 12px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+
+/* Commerce-first mobile refinements aligned with MagicPath Foundations */
+.store-shell{max-width:100%;overflow-x:clip}
+#kategori button{touch-action:manipulation}
+#katalog article{min-width:0}
+#katalog article button{min-height:44px}
+@media(max-width:767px){
+  body{font-size:14px}
+  .mobile-bottom-nav{box-shadow:0 -6px 24px #101b2b0c}
+  main>header{position:sticky;top:0}
+  #katalog{scroll-margin-top:84px}
+  #kategori{scroll-margin-top:84px}
+  #cara-kerja{scroll-margin-top:84px}
+}
+@media(min-width:768px){
+  #kategori button:hover{transform:translateY(-1px)}
+}
