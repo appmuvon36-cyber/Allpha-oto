@@ -21,3 +21,17 @@ button, input, select, textarea { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 :focus-visible { outline: 3px solid #f6a486; outline-offset: 2px; }
 ::selection { background: #ffe2d6; }
+
+/* Operations workspace responsive polish */
+.admin-workspace,.admin-layout{min-width:0}
+button,a,input,select,textarea{touch-action:manipulation}
+table{border-collapse:separate;border-spacing:0}
+@media(max-width:767px){
+  body{font-size:14px}
+  main{overflow-x:clip}
+  button,a{min-height:40px}
+  input,select,textarea{max-width:100%}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
