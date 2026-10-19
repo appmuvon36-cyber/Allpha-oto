@@ -29,6 +29,11 @@ class MarketplaceImageImportValidationTests(unittest.TestCase):
             main.validate_marketplace_image_url("http://p16-images-common-sign-sg.tokopedia-static.net/image.jpg")
         self.assertEqual(caught.exception.status_code, 422)
 
+    def test_malformed_image_url_is_rejected(self):
+        with self.assertRaises(HTTPException) as caught:
+            main.validate_marketplace_image_url("https://[malformed")
+        self.assertEqual(caught.exception.status_code, 422)
+
     def test_listing_must_be_from_supported_marketplace(self):
         with self.assertRaises(HTTPException) as caught:
             main.validate_marketplace_image_url("https://example.com/product", listing=True)
