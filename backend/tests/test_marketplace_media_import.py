@@ -35,9 +35,9 @@ class MarketplaceImageImportValidationTests(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 422)
 
     def test_image_signature_detection(self):
-        self.assertEqual(main.detect_product_image_type(b"\\xff\\xd8\\xff\x00"), "image/jpeg")
-        self.assertEqual(main.detect_product_image_type(b"\\x89PNG\\r\\n\\x1a\\nrest"), "image/png")
-        self.assertEqual(main.detect_product_image_type(b"RIFF\\x00\\x00\\x00\\x00WEBPrest"), "image/webp")
+        self.assertEqual(main.detect_product_image_type(b"\xff\xd8\xff\x00"), "image/jpeg")
+        self.assertEqual(main.detect_product_image_type(b"\x89PNG\r\n\x1a\nrest"), "image/png")
+        self.assertEqual(main.detect_product_image_type(b"RIFF\x00\x00\x00\x00WEBPrest"), "image/webp")
         self.assertIsNone(main.detect_product_image_type(b"<html>not an image</html>"))
 
     def test_marketplace_import_requires_authentication(self):
