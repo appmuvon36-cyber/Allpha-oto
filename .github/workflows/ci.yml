@@ -115,5 +115,7 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019003036_phase07_reservation_expiry.sql
       - name: Apply Phase 07 transaction foreign-key indexes
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019003253_phase07_transaction_fk_indexes.sql
+      - name: Apply Phase 07 idempotency RLS guard
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019003323_phase07_idempotency_rls_guard.sql
       - name: Verify Phase 07 atomic stock, checkout, payment, fulfillment, return and refund
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/phase07_db_assertions.sql
