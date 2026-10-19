@@ -161,6 +161,17 @@ async def checkout(
 ) -> dict[str, Any]:
     if identity.get("role") != "customer":
         raise HTTPException(status_code=403, detail="Checkout requires a customer account.")
+
+    # Do not create a payable order with a fabricated zero shipping fee. RajaOngkir
+    # requires a configured origin, destination IDs, package weight and a live quote.
+    # Those inputs are not yet reliably available from the current catalog/address
+    # contract, so checkout stays fail-closed until a quote is calculated and bound
+    # to the order server-side.
+    raise HTTPException(
+        status_code=503,
+        detail="Checkout sementara belum tersedia karena tarif kurir belum berhasil dikutip. Silakan coba lagi setelah ongkir terverifikasi.",
+    )
+
     carts = await supabase_get(
         "shopping_carts",
         {"select": "id", "customer_user_id": f"eq.{identity['user']['id']}", "limit": "1"},
