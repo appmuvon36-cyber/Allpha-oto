@@ -24,6 +24,7 @@ class Phase07ContractTests(unittest.TestCase):
             ("GET", "/v1/admin/inventory"),
             ("GET", "/v1/admin/inventory/ledger"),
             ("POST", "/v1/admin/inventory/mutations"),
+            ("POST", "/v1/admin/inventory/expire-reservations"),
             ("GET", "/v1/admin/orders"),
             ("GET", "/v1/admin/payments"),
             ("GET", "/v1/admin/returns"),
