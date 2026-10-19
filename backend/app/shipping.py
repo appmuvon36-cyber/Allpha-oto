@@ -117,7 +117,7 @@ async def set_product_shipping_weight(
     product_id: UUID,
     request: ShippingWeightMutation = Body(...),
     idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
-    identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor")),
+    identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "moderator")),
 ) -> dict[str, Any]:
     supabase_url, anon_key = require_supabase_configuration()
     headers = {"apikey": anon_key, "Authorization": "Bearer " + identity["_access_token"], "Content-Type": "application/json", "Accept": "application/json"}
