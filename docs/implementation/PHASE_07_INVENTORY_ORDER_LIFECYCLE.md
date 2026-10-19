@@ -5,7 +5,7 @@ Status: implemented in the canonical source and additive migration applied to th
 ## Existing baseline and migration
 
 - Reuses the existing public.inventory_ledger; does not drop, rename, reset or recreate existing business tables.
-- Migrations: supabase/migrations/20261019002354_phase07_inventory_order_lifecycle.sql, supabase/migrations/20261019003036_phase07_reservation_expiry.sql, supabase/migrations/20261019003253_phase07_transaction_fk_indexes.sql, and supabase/migrations/20261019003323_phase07_idempotency_rls_guard.sql, and supabase/migrations/20261019003442_phase07_checkout_address_bounds.sql, and supabase/migrations/20261019003521_phase07_shipping_fee_guard.sql.
+- Migrations: supabase/migrations/20261019002354_phase07_inventory_order_lifecycle.sql, supabase/migrations/20261019003036_phase07_reservation_expiry.sql, supabase/migrations/20261019003253_phase07_transaction_fk_indexes.sql, and supabase/migrations/20261019003323_phase07_idempotency_rls_guard.sql, and supabase/migrations/20261019003442_phase07_checkout_address_bounds.sql, supabase/migrations/20261019003521_phase07_shipping_fee_guard.sql, and supabase/migrations/20261019003958_phase07_cancel_pending_payment_cleanup.sql.
 - New tables: inventory_balances, shopping_carts, shopping_cart_items, oto_orders, oto_order_items, inventory_reservations, oto_payment_events, oto_returns, oto_return_items, and oto_idempotency_records.
 - Prices and product details are snapshotted to oto_order_items at checkout. Currency is constrained to IDR. Shipping fees remain server-owned and are fixed at zero until a real shipping-rate integration is configured; customer-provided fees are ignored and a database constraint rejects nonzero fees. Address fields have database-level length bounds.
 - RLS is enabled for every new table. Direct client writes to the transactional tables are revoked; mutations must use the authenticated FastAPI → PostgreSQL RPC path.
@@ -16,7 +16,7 @@ Status: implemented in the canonical source and additive migration applied to th
 2. Checkout locks inventory balance rows in product-id order and reserves stock in the same database transaction as the order, item snapshots, ledger entries and audit event.
 3. A failed checkout rolls back the order and all reservations.
 4. A retry with the same actor, idempotency key and payload replays the original result; a conflicting payload is rejected.
-5. Cancellation before fulfillment releases reserved stock and writes ledger entries.
+5. Cancellation before fulfillment releases reserved stock and writes ledger entries; a pending payment review is marked rejected in the same transaction.
 6. Shipment consumes both on-hand and reserved quantities atomically; the inventory ledger records the sale.
 7. Payment evidence is pending_review. It never marks an order paid by itself. Authorized order_manager/admin must verify the payment with a provider/bank reference or verification note.
 8. Returned items are not automatically restocked. The operator selects inspected items for restock when recording physical receipt.
