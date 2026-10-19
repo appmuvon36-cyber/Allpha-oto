@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, LogIn, Minus, Plus, RefreshCw, ShoppingCart, Truck } from "lucide-react";
+import { ArrowLeft, CheckCircle2, LogIn, MessageCircle, Minus, Plus, RefreshCw, ShoppingCart, Truck } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://otoclinic-api-production.up.railway.app";
 type CartItem = { id: string; product_id: string; quantity: number; products: { id:string; sku:string; name:string; condition:string; retail_price:number; currency:string; status:string; weight_grams:number|null } };
 type Destination = {id:string;label:string;province:string;city:string;district:string;subdistrict:string;postal_code:string};
 type ShippingQuote = {courier:string;courier_name:string;service:string;description:string;cost:number;etd:string};
-type Order = { id:string; status:string; subtotal:number; shipping_fee:number; total_amount:number; currency:string; tracking_code:string|null; created_at:string };
+type Order = { id:string; status:string; subtotal:number; shipping_fee:number; total_amount:number; currency:string; tracking_code:string|null; sales_channel?:string; whatsapp_handoff_status?:string; whatsapp_handoff_prepared_at?:string|null; whatsapp_handoff_expires_at?:string|null; created_at:string };
 const money=(n:unknown)=>new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(Number(n??0));
 const statuses:Record<string,string>={pending_payment:"Menunggu pembayaran",payment_review:"Bukti pembayaran sedang ditinjau",paid:"Pembayaran terverifikasi",processing:"Sedang diproses",shipped:"Dalam pengiriman",delivered:"Pesanan diterima",cancelled:"Dibatalkan",return_requested:"Retur diajukan",returned:"Retur selesai",partially_returned:"Retur sebagian"};
 
@@ -21,7 +21,7 @@ export default function CartPage(){
  const [items,setItems]=useState<CartItem[]>([]);
  const [orders,setOrders]=useState<Order[]>([]);
  const [loading,setLoading]=useState(true);
- const [busy,setBusy]=useState(false);
+ const [busy,setBusy]=useState(false);\n const [whatsappBusyOrder,setWhatsappBusyOrder]=useState("");
  const [error,setError]=useState("");
  const [notice,setNotice]=useState("");
  const [recipient,setRecipient]=useState("");
@@ -145,7 +145,7 @@ export default function CartPage(){
   finally{setBusy(false);}
  }
 
- async function submitEvidence(order:Order){
+ async function continueViaWhatsApp(order:Order){\n  setWhatsappBusyOrder(order.id);setError("");setNotice("");\n  try{\n   const body=await request("/v1/orders/"+order.id+"/whatsapp-handoff",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:"{}"});\n   if(typeof body.whatsapp_url!=="string"||!body.whatsapp_url.startsWith("https://wa.me/"))throw new Error("Tautan WhatsApp tidak tersedia.");\n   setNotice(body.handoff_notice??"Tautan WhatsApp disiapkan; status pengiriman pesan belum diketahui.");\n   window.location.assign(body.whatsapp_url);\n  }catch(e){setError(e instanceof Error?e.message:"WhatsApp handoff belum dapat disiapkan.");}\n  finally{setWhatsappBusyOrder("");}\n }\n\n async function submitEvidence(order:Order){
   if(!evidence.trim()){setError("Isi referensi bukti transfer atau referensi provider.");return;}
   setBusy(true);setError("");setNotice("");
   try{
@@ -174,14 +174,14 @@ export default function CartPage(){
    <section className="space-y-6">
     {error&&<p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</p>}
     {notice&&<p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</p>}
-    {latestOrder&&<div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4"><div className="flex items-center gap-2 font-bold text-emerald-900"><CheckCircle2 size={18}/> Pesanan dibuat</div><p className="mt-2 break-all text-sm">Order ID: {latestOrder.id}</p><p className="mt-1 text-sm">Status: {statuses[latestOrder.status]??latestOrder.status}</p></div>}
+    {latestOrder&&<div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4"><div className="flex items-center gap-2 font-bold text-emerald-900"><CheckCircle2 size={18}/> Pesanan dibuat</div><p className="mt-2 break-all text-sm">Order ID: {latestOrder.id}</p><p className="mt-1 text-sm">Status: {statuses[latestOrder.status]??latestOrder.status}</p><button type="button" disabled={whatsappBusyOrder===latestOrder.id} onClick={()=>void continueViaWhatsApp(latestOrder)} className="mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"><MessageCircle size={17}/>{whatsappBusyOrder===latestOrder.id?"Menyiapkan WhatsApp…":"Lanjutkan via WhatsApp"}</button><p className="mt-2 text-xs text-emerald-900">Pesanan sudah tercatat di OtoClinic. Membuka WhatsApp tidak berarti pesan telah dikirim atau pembayaran terverifikasi.</p></div>}
     <section className="overflow-hidden rounded-2xl border bg-white"><div className="flex items-center justify-between border-b p-4"><div><h1 className="font-bold">Keranjang belanja</h1><p className="text-xs text-slate-500">Stok hanya dijamin saat reservasi checkout berhasil.</p></div><button onClick={()=>void load(token)} className="rounded-lg border p-2" aria-label="Muat ulang"><RefreshCw size={16}/></button></div>
     {items.length===0?<div className="p-8 text-center"><ShoppingCart className="mx-auto text-slate-300" size={32}/><p className="mt-3 font-semibold">Keranjang kosong</p><p className="mt-1 text-sm text-slate-500">Tambahkan produk dari katalog sebelum checkout.</p><Link href="/#katalog" className="mt-4 inline-flex rounded-lg bg-orange-600 px-4 py-2.5 text-sm font-bold text-white">Jelajahi katalog</Link></div>:<div className="divide-y">{items.map(item=><article key={item.id} className="flex gap-3 p-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-100"><ShoppingCart size={20} className="text-slate-400"/></div><div className="min-w-0 flex-1"><p className="font-semibold">{item.products?.name??"Produk"}</p><p className="text-xs text-slate-500">{item.products?.sku} · {item.products?.condition}</p><p className="mt-1 font-bold">{money(item.products?.retail_price)}</p><div className="mt-2 flex items-center gap-2"><button disabled={busy} onClick={()=>void updateQuantity(item,item.quantity-1)} className="rounded-md border p-1.5" aria-label="Kurangi kuantitas"><Minus size={14}/></button><span className="min-w-6 text-center text-sm font-semibold">{item.quantity}</span><button disabled={busy||item.quantity>=100} onClick={()=>void updateQuantity(item,item.quantity+1)} className="rounded-md border p-1.5" aria-label="Tambah kuantitas"><Plus size={14}/></button><button disabled={busy} onClick={()=>void updateQuantity(item,0)} className="ml-auto text-xs font-semibold text-red-700">Hapus</button></div></div><p className="shrink-0 text-sm font-bold">{money(Number(item.products?.retail_price??0)*item.quantity)}</p></article>)}</div>}
     <div className="border-t bg-slate-50 p-4"><div className="flex justify-between text-sm"><span>Subtotal sementara</span><strong>{money(subtotal)}</strong></div><p className="mt-1 text-xs text-slate-500">Subtotal ini belum termasuk tarif pengiriman. Ongkir belum memiliki kutipan kurir terverifikasi dan harus dikonfirmasi sebelum pembayaran.</p></div></section>
     <section className="overflow-hidden rounded-2xl border bg-white"><div className="border-b p-4"><h2 className="font-bold">Pesanan saya</h2><p className="text-xs text-slate-500">Status berasal dari sistem transaksi OtoClinic.</p></div>
     {orders.length===0?<p className="p-6 text-sm text-slate-500">Belum ada pesanan.</p>:<div className="divide-y">{orders.map(o=><article key={o.id} className="p-4"><div className="flex flex-col justify-between gap-2 sm:flex-row"><div><p className="break-all text-sm font-semibold">{o.id}</p><p className="mt-1 text-xs text-slate-500">{new Date(o.created_at).toLocaleString("id-ID")}</p></div><span className="h-fit w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold">{statuses[o.status]??o.status}</span></div><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><strong>{money(o.total_amount)}</strong>{o.tracking_code&&<span className="inline-flex items-center gap-1 text-sm text-slate-600"><Truck size={14}/> {o.tracking_code}</span>}</div>
       {o.status==="pending_payment"&&<div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={latestOrder?.id===o.id?evidence:""} onChange={e=>{setLatestOrder(o);setEvidence(e.target.value)}} placeholder="Referensi bukti transfer" className="min-w-0 flex-1 rounded-lg border p-2.5 text-sm"/><button disabled={busy||!(latestOrder?.id===o.id&&evidence.trim())} onClick={()=>void submitEvidence(o)} className="rounded-lg bg-orange-600 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-50">Kirim bukti</button><button disabled={busy} onClick={()=>void cancelOrder(o)} className="rounded-lg border px-3 py-2.5 text-sm font-semibold">Batalkan</button></div>}
-      {o.status==="payment_review"&&<p className="mt-3 text-xs text-amber-700">Bukti pembayaran sedang diperiksa. Jangan menganggap pesanan lunas sebelum status pembayaran diverifikasi.</p>}
+      {o.status==="payment_review"&&<p className="mt-3 text-xs text-amber-700">Bukti pembayaran sedang diperiksa. Jangan menganggap pesanan lunas sebelum status pembayaran diverifikasi.</p>}\n      {!["cancelled","delivered","returned","partially_returned"].includes(o.status)&&<div className="mt-3"><button type="button" disabled={!!whatsappBusyOrder} onClick={()=>void continueViaWhatsApp(o)} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-emerald-700 px-3 py-2 text-sm font-bold text-emerald-800 disabled:opacity-50"><MessageCircle size={16}/>{whatsappBusyOrder===o.id?"Menyiapkan WhatsApp…":"Lanjutkan pesanan via WhatsApp"}</button><p className="mt-1 text-xs text-slate-500">Referensi dan ringkasan diambil dari pesanan kanonis; pembayaran tetap mengikuti status OtoClinic.</p></div>}
     </article>)}</div>}</section>
    </section>
    <aside className="h-fit space-y-5">
