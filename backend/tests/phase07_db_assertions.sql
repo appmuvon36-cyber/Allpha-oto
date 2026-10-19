@@ -24,7 +24,7 @@ begin
   result:=public.oto_order_mutate('checkout',null,checkout_payload,'phase07-checkout-0001');
   if result->>'replayed'<>'true' then raise exception 'phase07 checkout retry was not idempotent'; end if;
   if (select count(*) from public.oto_orders)-orders_before<>1 then raise exception 'phase07 checkout replay duplicated order'; end if;
-  if (select b.reserved from public.inventory_balances b where b.product_id=product_id)<>4 then raise exception 'phase07 stock reservation mismatch'; end if;
+  if (select b.reserved from public.inventory_balances b where b.product_id='07000000-0000-4000-8000-000000000003'::uuid)<>4 then raise exception 'phase07 stock reservation mismatch'; end if;
   begin
     perform public.oto_order_mutate('checkout',null,jsonb_set(checkout_payload,'{items,0,quantity}','7'::jsonb),'phase07-checkout-oversell-01');
     raise exception 'phase07 oversell unexpectedly succeeded';
@@ -42,7 +42,7 @@ begin
   if result#>>'{order,status}'<>'shipped' then raise exception 'phase07 shipment transition failed'; end if;
   if (select b.on_hand from public.inventory_balances b where b.product_id=product_id)<>6 or (select reserved from public.inventory_balances where product_id=product_id)<>0 then raise exception 'phase07 ship did not consume reservation atomically'; end if;
   perform public.oto_order_mutate('mark_delivered',order_id,'{}'::jsonb,'phase07-deliver-001');
-  select x.id into order_item_id from public.oto_order_items x where x.order_id=order_id limit 1;
+  select x.id into order_item_id from public.oto_order_items x where x.order_id=(select o2.id from public.oto_orders o2 where o2.customer_user_id=customer_id order by o2.created_at desc limit 1) limit 1;
   perform set_config('request.jwt.claim.sub',customer_id::text,true);
   result:=public.oto_order_mutate('request_return',order_id,jsonb_build_object('reason','CI return inspection','items',jsonb_build_array(jsonb_build_object('order_item_id',order_item_id,'quantity',1))),'phase07-return-request-001');
   return_id:=(result#>>'{return,id}')::uuid;
