@@ -1,0 +1,49 @@
+name: OtoClinic Production UI QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/qa/production-ui.spec.cjs"
+      - ".github/workflows/production-ui-qa.yml"
+      - "apps/web/**"
+      - "apps/admin/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: otoclinic-production-ui-qa
+  cancel-in-progress: true
+
+jobs:
+  public-production-ui:
+    name: Production routes, viewport overflow, interaction and safe states
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install isolated Playwright test dependency
+        run: npm install --no-save --package-lock=false @playwright/test
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run read-only production browser QA
+        env:
+          OTOCLINIC_WEB_URL: https://otoclinic-web-production.up.railway.app
+          OTOCLINIC_ADMIN_URL: https://otoclinic-admin-production.up.railway.app
+          OTOCLINIC_API_URL: https://otoclinic-api-production.up.railway.app
+        run: npx playwright test scripts/qa/production-ui.spec.cjs --reporter=list
+      - name: Upload viewport screenshots and Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: otoclinic-production-ui-qa
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: warn
+          retention-days: 14
