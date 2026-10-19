@@ -5,9 +5,9 @@ Status: implemented in the canonical source and additive migration applied to th
 ## Existing baseline and migration
 
 - Reuses the existing public.inventory_ledger; does not drop, rename, reset or recreate existing business tables.
-- Migrations: supabase/migrations/20261019002354_phase07_inventory_order_lifecycle.sql, supabase/migrations/20261019003036_phase07_reservation_expiry.sql, supabase/migrations/20261019003253_phase07_transaction_fk_indexes.sql, and supabase/migrations/20261019003323_phase07_idempotency_rls_guard.sql.
+- Migrations: supabase/migrations/20261019002354_phase07_inventory_order_lifecycle.sql, supabase/migrations/20261019003036_phase07_reservation_expiry.sql, supabase/migrations/20261019003253_phase07_transaction_fk_indexes.sql, and supabase/migrations/20261019003323_phase07_idempotency_rls_guard.sql, and supabase/migrations/20261019003442_phase07_checkout_address_bounds.sql.
 - New tables: inventory_balances, shopping_carts, shopping_cart_items, oto_orders, oto_order_items, inventory_reservations, oto_payment_events, oto_returns, oto_return_items, and oto_idempotency_records.
-- Prices and product details are snapshotted to oto_order_items at checkout. Currency is constrained to IDR.
+- Prices and product details are snapshotted to oto_order_items at checkout. Currency is constrained to IDR. Shipping fees remain server-owned and are fixed at zero until a real shipping-rate integration is configured; customer-provided fees are ignored. Address fields have database-level length bounds.
 - RLS is enabled for every new table. Direct client writes to the transactional tables are revoked; mutations must use the authenticated FastAPI → PostgreSQL RPC path.
 
 ## Transaction invariants
