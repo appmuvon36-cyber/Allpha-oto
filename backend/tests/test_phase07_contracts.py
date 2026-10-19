@@ -11,7 +11,7 @@ class Phase07ContractTests(unittest.TestCase):
         cls.client = TestClient(app)
 
     def test_transaction_routes_are_registered_and_protected(self):
-        routes = {(method, path) for path, operations in app.openapi()["paths"].items() for method in operations if method.upper()}
+        routes = {(method.upper(), path) for path, operations in app.openapi()["paths"].items() for method in operations}
         expected = {
             ("GET", "/v1/cart"),
             ("POST", "/v1/cart/mutations"),
