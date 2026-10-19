@@ -135,7 +135,7 @@ export default function CartPage(){
   try{
    const body=await request("/v1/checkout",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({
     shipping_address:{recipient_name:recipient.trim(),phone:phone.trim(),address:address.trim(),city:city.trim(),province:province.trim(),postal_code:postalCode.trim()},
-    shipping_quote:{destination_id:destinationId,destination_search:postalCode.trim()||[destinations.find(d=>d.id===destinationId)?.subdistrict,destinations.find(d=>d.id===destinationId)?.district,destinations.find(d=>d.id===destinationId)?.city].filter(Boolean).join(" "),courier:selectedQuote?.courier,service:selectedQuote?.service,cost:selectedQuote?.cost},
+    shipping_quote:{destination_id:destinationId,destination_search:postalCode.trim()||[destinations.find(d=>d.id===destinationId)?.subdistrict,destinations.find(d=>d.id===destinationId)?.district,destinations.find(d=>d.id===destinationId)?.city,destinations.find(d=>d.id===destinationId)?.province].filter(Boolean).join(" "),courier:selectedQuote?.courier,service:selectedQuote?.service,cost:selectedQuote?.cost},
    })});
    const order=body.result?.order as Order|undefined;
    if(!order)throw new Error("Pesanan belum dapat dikonfirmasi oleh server.");
