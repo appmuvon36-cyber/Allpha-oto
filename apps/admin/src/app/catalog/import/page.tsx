@@ -7,7 +7,7 @@ import { ArrowLeft, Download, FileSpreadsheet, Upload } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL || "https://otoclinic-api-production.up.railway.app";
-const CONDITIONS = new Set(["new_oem", "new_aftermarket", "used", "refurbished", "remanufactured", "damaged_for_parts"]);
+const CONDITIONS = new Set(["unknown", "new_oem", "new_aftermarket", "used", "refurbished", "remanufactured", "damaged_for_parts"]);
 const HEADERS = ["sku","slug","name","description","brand","part_number","category","condition","condition_grade","package_quantity","warranty_days","retail_price","weight_grams","source_rights_evidence","fitment_variant_id","fitment_evidence_url","fitment_evidence_note","marketplace","marketplace_listing_url","marketplace_image_url","marketplace_price_low_idr","marketplace_price_high_idr","marketplace_sales_signal","marketplace_seller","marketplace_rating_signal","marketplace_evidence_note"];
 type Row = Record<string,string>;
 type CheckedRow = { line:number; values:Row; errors:string[] };
@@ -39,6 +39,7 @@ function validateRows(text:string):CheckedRow[]{
   const errors:string[]=[];const line=index+2;
   for(const key of required)if(!values[key])errors.push(key+" wajib diisi");
   if(values.condition&&!CONDITIONS.has(values.condition))errors.push("condition tidak dikenal");
+  if(values.condition==="unknown")errors.push("condition belum terverifikasi; baris boleh diimpor hanya setelah condition dikonfirmasi dari listing atau pemasok");
   if(values.sku){const key=values.sku.toLowerCase();if(seen.has(key))errors.push("SKU duplikat di file");seen.add(key);}
   if(values.retail_price!==undefined&&values.retail_price!==""){const n=Number(values.retail_price);if(!Number.isFinite(n)||n<0)errors.push("retail_price harus angka IDR >= 0");}
   if(values.weight_grams!==undefined&&values.weight_grams!==""){const n=Number(values.weight_grams);if(!Number.isInteger(n)||n<1||n>1000000)errors.push("weight_grams harus bilangan 1–1.000.000");}
