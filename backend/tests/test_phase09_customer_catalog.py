@@ -8,7 +8,7 @@ from app import main
 class Phase09CustomerCatalogTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(main.app)
-        self.old_get = main.supabase_get
+        self.old_get = main.supabase_get\n        self.old_media = main.public_product_media\n\n        async def fake_media(product_ids):\n            return {}\n\n        main.public_product_media = fake_media
         self.calls = []
 
         async def fake_get(table, params, access_token=None):
@@ -30,7 +30,7 @@ class Phase09CustomerCatalogTests(unittest.TestCase):
         main.supabase_get = fake_get
 
     def tearDown(self):
-        main.supabase_get = self.old_get
+        main.supabase_get = self.old_get\n        main.public_product_media = self.old_media
 
     def test_public_product_detail_returns_only_published_lookup(self):
         response = self.client.get("/v1/catalog/products/00000000-0000-4000-8000-000000000001")
