@@ -6,7 +6,7 @@ import hashlib
 import re
 from typing import Any
 from urllib.parse import quote, urlsplit
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Body
@@ -926,7 +926,11 @@ class MarketplaceProductMediaImport(BaseModel):
 def validate_marketplace_image_url(value: str, *, listing: bool = False) -> str:
     parsed = urlsplit(value)
     host = (parsed.hostname or "").lower().rstrip(".")
-    if parsed.scheme != "https" or not host or parsed.username or parsed.password or parsed.port not in (None, 443):
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Marketplace source must be a valid HTTPS URL.") from exc
+    if parsed.scheme != "https" or not host or parsed.username or parsed.password or port not in (None, 443):
         raise HTTPException(status_code=422, detail="Marketplace source must be a valid HTTPS URL.")
     if listing:
         allowed = host in {"shopee.co.id", "www.shopee.co.id", "tokopedia.com", "www.tokopedia.com"}
@@ -938,9 +942,9 @@ def validate_marketplace_image_url(value: str, *, listing: bool = False) -> str:
 
 
 def detect_product_image_type(content: bytes) -> str | None:
-    if content.startswith(b"\\xff\\xd8\\xff"):
+    if content.startswith(b"\xff\xd8\xff"):
         return "image/jpeg"
-    if content.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
     if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
         return "image/webp"
@@ -1002,7 +1006,7 @@ async def import_marketplace_product_media(
     supabase_url, anon_key = require_supabase_configuration()
     sha256 = hashlib.sha256(content).hexdigest()
     extension = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/avif": "avif"}[detected_type]
-    storage_path = f"{product_id}/{UUID(bytes=__import__('os').urandom(16), version=4)}.{extension}"
+    storage_path = f"{product_id}/{uuid4()}.{extension}"
     headers = {"apikey": anon_key, "Authorization": f"Bearer {identity['_access_token']}", "Content-Type": detected_type, "x-upsert": "false"}
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
