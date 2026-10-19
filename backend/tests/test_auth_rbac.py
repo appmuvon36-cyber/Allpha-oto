@@ -96,20 +96,22 @@ class ApiFeatureTests(unittest.TestCase):
         main.settings.supabase_anon_key = self.original_supabase_anon_key
 
     def test_public_catalog_is_limited_to_published_rows(self):
-        captured = {}
+        captured = []
 
         async def fake_get(table, params, access_token=None):
-            captured.update(table=table, params=params, access_token=access_token)
-            return [{"id": "real-row-placeholder"}]
+            captured.append({"table": table, "params": params, "access_token": access_token})
+            if table == "products":
+                return [{"id": "real-row-placeholder"}]
+            return []
 
         main.supabase_get = fake_get
         response = self.client.get("/v1/catalog/products?q=brake&condition=used&limit=10")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["count"], 1)
-        self.assertEqual(captured["table"], "products")
-        self.assertEqual(captured["params"]["status"], "eq.published")
-        self.assertEqual(captured["params"]["condition"], "eq.used")
-        self.assertEqual(captured["params"]["limit"], "10")
+        product_call = next(call for call in captured if call["table"] == "products")
+        self.assertEqual(product_call["params"]["status"], "eq.published")
+        self.assertEqual(product_call["params"]["condition"], "eq.used")
+        self.assertEqual(product_call["params"]["limit"], "10")
 
     def test_invalid_condition_is_rejected_before_database_call(self):
         response = self.client.get("/v1/catalog/products?condition=unknown")
