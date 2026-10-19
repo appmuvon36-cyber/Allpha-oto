@@ -134,6 +134,10 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019070000_ec02_product_shipping_weight.sql
       - name: Apply EC-02 signed shipping quote checkout migration
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019081000_ec02_signed_shipping_quote_checkout.sql
+      - name: Apply EC-02 checkout quote weight binding migration
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019120000_ec02_checkout_quote_weight_binding.sql
+      - name: Verify EC-02 quote weight matches transactional order items
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/ec02_shipping_quote_assertions.sql
       - name: Apply Phase 08 admin role management migration
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019010200_phase08_admin_role_management.sql
       - name: Verify Phase 08 role change, audit and idempotency
