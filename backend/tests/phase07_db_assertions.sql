@@ -24,7 +24,7 @@ begin
   end;
   if (select b.on_hand from public.inventory_balances b where b.product_id='07000000-0000-4000-8000-000000000003'::uuid)<>10
      or exists(select 1 from public.oto_idempotency_records where actor_user_id=manager_id and request_id='phase05-force-audit-failure')
-     or exists(select 1 from public.inventory_ledger where product_id=product_id and reason='forced audit rollback') then
+     or exists(select 1 from public.inventory_ledger il where il.product_id='07000000-0000-4000-8000-000000000003'::uuid and il.reason='forced audit rollback') then
     raise exception 'phase07 failed to roll back mutation after audit failure';
   end if;
   select count(*) into orders_before from public.oto_orders;
