@@ -83,10 +83,17 @@ class ApiFeatureTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(main.app)
         self.original_supabase_get = main.supabase_get
+        self.original_supabase_url = main.settings.supabase_url
+        self.original_supabase_anon_key = main.settings.supabase_anon_key
+        # Routes require configured Supabase even when the data access is mocked.
+        main.settings.supabase_url = "https://example.supabase.co"
+        main.settings.supabase_anon_key = "test-anon-key"
 
     def tearDown(self):
         main.app.dependency_overrides.clear()
         main.supabase_get = self.original_supabase_get
+        main.settings.supabase_url = self.original_supabase_url
+        main.settings.supabase_anon_key = self.original_supabase_anon_key
 
     def test_public_catalog_is_limited_to_published_rows(self):
         captured = {}
