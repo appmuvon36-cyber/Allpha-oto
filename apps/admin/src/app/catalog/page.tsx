@@ -9,7 +9,7 @@ type Product = { id:string; sku:string|null; slug:string; name:string; descripti
 type Fitment = { id:string; status:string; evidence_url:string|null; evidence_note:string|null; verified_at:string|null; variant_id:string; vehicle_variants?:{name:string;year_start:number|null;year_end:number|null;vehicle_models?:{name:string;vehicle_makes?:{name:string}}}|null };
 type ProductMedia = {id:string;product_id:string;storage_path:string|null;source_url:string|null;preview_url?:string|null;alt_text:string;media_kind:string;rights_status:string;rights_evidence_note:string|null;review_status:string;is_primary:boolean;created_at:string};
 const statusLabels:Record<string,string>={draft:"Draft",review:"Menunggu review",approved:"Disetujui",published:"Tayang",rejected:"Ditolak",archived:"Arsip"};
-const conditionLabels:Record<string,string>={new_oem:"Baru · OEM",new_aftermarket:"Baru · aftermarket",used:"Bekas",refurbished:"Rekondisi",remanufactured:"Remanufaktur",damaged_for_parts:"Untuk kanibal part"};
+const conditionLabels:Record<string,string>={unknown:"Belum diverifikasi · draft saja",new_oem:"Baru · OEM",new_aftermarket:"Baru · aftermarket",used:"Bekas",refurbished:"Rekondisi",remanufactured:"Remanufaktur",damaged_for_parts:"Untuk kanibal part"};
 
 export default function CatalogPage(){
  const router=useRouter(); const supabase=getSupabaseBrowserClient();
