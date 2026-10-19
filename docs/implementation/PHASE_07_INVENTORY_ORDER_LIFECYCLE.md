@@ -5,7 +5,7 @@ Status: implemented in the canonical source and additive migration applied to th
 ## Existing baseline and migration
 
 - Reuses the existing public.inventory_ledger; does not drop, rename, reset or recreate existing business tables.
-- Migration: supabase/migrations/20261019002354_phase07_inventory_order_lifecycle.sql.
+- Migrations: supabase/migrations/20261019002354_phase07_inventory_order_lifecycle.sql and supabase/migrations/20261019003036_phase07_reservation_expiry.sql.
 - New tables: inventory_balances, shopping_carts, shopping_cart_items, oto_orders, oto_order_items, inventory_reservations, oto_payment_events, oto_returns, oto_return_items, and oto_idempotency_records.
 - Prices and product details are snapshotted to oto_order_items at checkout. Currency is constrained to IDR.
 - RLS is enabled for every new table. Direct client writes to the transactional tables are revoked; mutations must use the authenticated FastAPI → PostgreSQL RPC path.
@@ -37,6 +37,7 @@ Status: implemented in the canonical source and additive migration applied to th
 - GET /v1/admin/inventory
 - GET /v1/admin/inventory/ledger
 - POST /v1/admin/inventory/mutations (receipt, adjustment_increase, adjustment_decrease, write_off)
+- POST /v1/admin/inventory/expire-reservations (cancels expired unpaid orders and releases stock idempotently)
 
 ### Order operations
 - GET /v1/admin/orders
@@ -62,4 +63,4 @@ All mutating endpoints require Idempotency-Key, an active authenticated profile 
 
 ## Known scope boundary
 
-Provider-backed payment initiation/webhooks and actual refund execution, shipment-provider labels/tracking webhooks, shipping-price calculation, reservation-expiry worker, and production user-session matrix are not claimed as complete. They require Phase 11 provider configuration and Phase 12 release verification.
+Provider-backed payment initiation/webhooks and actual refund execution, shipment-provider labels/tracking webhooks, shipping-price calculation, an automatically scheduled reservation-expiry worker, and production user-session matrix are not claimed as complete. An authorized idempotent expiry operation is available for the operations workspace; scheduling it requires an approved recurring job configuration. They require Phase 11 provider configuration and Phase 12 release verification.
