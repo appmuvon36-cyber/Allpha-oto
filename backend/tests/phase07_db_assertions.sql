@@ -9,7 +9,7 @@ declare
   available integer; orders_before integer;
 begin
   insert into auth.users(id,email) values(customer_id,'phase07-customer@example.invalid'),(manager_id,'phase07-manager@example.invalid') on conflict(id) do nothing;
-  insert into public.user_profiles(id,role,is_active) values(customer_id,'customer',true),(manager_id,'order_manager',true) on conflict(id) do update set role=excluded.role,is_active=true;
+  insert into public.user_profiles(id,role,is_active) values(customer_id,'customer',true),(manager_id,'admin',true) on conflict(id) do update set role=excluded.role,is_active=true;
   insert into public.products(id,sku,slug,name,category,condition,package_quantity,warranty_days,status,currency,retail_price,source_rights_evidence)
   values(product_id,'PHASE07-CI-001','phase07-ci-001','Phase 07 CI Fixture','CI', 'new_aftermarket',1,0,'published','IDR',1000,'CI-only synthetic fixture')
   on conflict(id) do update set status='published',retail_price=1000;
