@@ -1,11 +1,12 @@
 import unittest
+import inspect
 
 from fastapi.testclient import TestClient
 
 from pydantic import ValidationError
 
 from app.main import app
-from app.phase07 import CheckoutRequest
+from app.phase07 import CheckoutRequest, checkout
 
 
 class Phase07ContractTests(unittest.TestCase):
