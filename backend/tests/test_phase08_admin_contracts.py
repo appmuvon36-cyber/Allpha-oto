@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import AsyncMock
 from uuid import UUID
 
 from fastapi.testclient import TestClient
