@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
@@ -995,7 +996,7 @@ async def admin_overview(
         return await supabase_count(table, filters, token, select_column)
 
     metric_keys = list(metric_specs)
-    metric_values = await __import__("asyncio").gather(*(read_metric(metric_specs[key]) for key in metric_keys))
+    metric_values = await asyncio.gather(*(read_metric(metric_specs[key]) for key in metric_keys))
     metrics = {
         key: {"value": metric_values[index], "available": metric_values[index] is not None}
         for index, key in enumerate(metric_keys)
