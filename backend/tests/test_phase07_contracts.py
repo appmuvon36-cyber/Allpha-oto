@@ -47,7 +47,7 @@ class Phase07ContractTests(unittest.TestCase):
     def test_checkout_requires_verified_bearer_identity(self):
         response = self.client.post(
             "/v1/checkout",
-            json={"shipping_address": {"recipient_name": "Test User", "phone": "081234567890", "address": "Jalan Test 123", "city": "Bogor", "province": "Jawa Barat"}},
+            json={"shipping_address": {"recipient_name": "Test User", "phone": "081234567890", "address": "Jalan Test 123", "city": "Bogor", "province": "Jawa Barat", "postal_code": "16111"}},
             headers={"Idempotency-Key": "phase07-checkout-test-001"},
         )
         self.assertEqual(response.status_code, 401)
@@ -64,7 +64,7 @@ class Phase07ContractTests(unittest.TestCase):
         request = CheckoutRequest.model_validate({
             "shipping_address": {
                 "recipient_name": "Test User", "phone": "081234567890",
-                "address": "Jalan Test 123", "city": "Bogor", "province": "Jawa Barat",
+                "address": "Jalan Test 123", "city": "Bogor", "province": "Jawa Barat", "postal_code": "16111",
             }
         })
         self.assertIsNone(request.shipping_quote)
@@ -79,6 +79,7 @@ class Phase07ContractTests(unittest.TestCase):
                     "address": "Jalan Test 123",
                     "city": "Bogor",
                     "province": "Jawa Barat",
+                    "postal_code": "16111",
                 },
             })
 
