@@ -190,8 +190,9 @@ async def checkout(
         raise HTTPException(status_code=422, detail="Kode pos alamat tidak cocok dengan lokasi tujuan ongkir.")
     address_city = request.shipping_address.city.strip().casefold()
     address_province = request.shipping_address.province.strip().casefold()
-    destination_label = str(live_quote["destination"].get("label") or "").casefold()
-    if address_city not in destination_label or address_province not in destination_label:
+    quote_city = str(live_quote["destination"].get("city") or "").strip().casefold()
+    quote_province = str(live_quote["destination"].get("province") or "").strip().casefold()
+    if (address_city not in quote_city and quote_city not in address_city) or (address_province not in quote_province and quote_province not in address_province):
         raise HTTPException(status_code=422, detail="Kota/provinsi alamat harus cocok dengan lokasi tujuan ongkir.")
     selected = next(
         (q for q in live_quote["quotes"]
