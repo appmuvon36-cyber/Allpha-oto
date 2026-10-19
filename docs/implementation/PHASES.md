@@ -100,6 +100,59 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 - Vehicle taxonomy and public catalog APIs return empty arrays. No production seed data was inserted, so positive-path vehicle selection and cart/checkout cannot be fully exercised with live records.
 - Remaining: real browser interaction/overflow/keyboard checks at the four viewports, post-deploy checkout redirect smoke, authorized staff-role flows, approved test-customer checkout/order path, exact-commit CI/build confirmation. Phase 10 remains deferred until this gate is closed.
 
+## E-Commerce Completion Program (OWNER PRIORITY — MUST COMPLETE BEFORE PHASE 10)
+
+Phase 05–09 provide important primitives, but they do not yet constitute a complete production commerce experience. The owner has explicitly prioritized end-to-end e-commerce completion, including WhatsApp-assisted checkout, before any AI/search work. Preserve existing phase numbers; execute the following commerce completion waves before Phase 10.
+
+### EC-01 — Customer storefront and product trust
+- Finish responsive storefront, category hierarchy, real product detail/media gallery, brand/part-number filters, condition/grade, package quantity, warranty, stock freshness, verified vehicle fitment, shipping/returns information, and sourcing request for unavailable parts.
+- All category/product/vehicle content comes from canonical API data. Empty production tables must produce honest empty states, never seeded demo inventory.
+- Mobile-first interaction at 360/390/820/1440 px, keyboard/focus, offline state and installable PWA behavior.
+
+### EC-02 — Cart and checkout orchestration
+- Reconcile guest cart and authenticated persistent cart without duplicate lines; quantity bounds, remove/save-for-later, cart persistence, price/stock revalidation, coupon validation, delivery address, contact, shipping method, order notes and final server-calculated summary.
+- Checkout uses idempotency keys, atomic stock reservation, immutable product/price/SKU/condition snapshots, safe retries and clear expiry behavior.
+- Do not present zero shipping as a real quote. Until a real provider is configured, use an explicitly labeled manual shipping quote/pending-quote flow or an admin-approved fixed policy.
+
+### EC-03 — WhatsApp-assisted order channel
+- Provide “Lanjutkan via WhatsApp” on product detail/cart/checkout where enabled. First create a canonical order through FastAPI; then generate a prefilled WhatsApp message containing order reference and concise snapshot summary. Use an opaque, expiring reference/token where needed; never trust client-supplied totals or message contents as transaction truth.
+- Track the channel and handoff state in the order timeline. Opening WhatsApp is not proof that a message was sent, received, accepted, or paid. Admin must confirm/decline the request in the order queue.
+- Optional true WhatsApp Business Platform messaging must use server-side credentials, approved templates where required, verified webhook signatures, idempotent event processing, retry/outbox and delivery logs. It stays disabled until real provider credentials and webhook configuration are verified.
+
+### EC-04 — Payment lifecycle
+- Separate payment intent, customer-submitted evidence, provider webhook events, authorized manual review, reconciliation, failed/expired payment, cancellation and refund. Never mark paid based on a screenshot or a WhatsApp message.
+- Provide adapter contracts for configured online payment providers and safe manual transfer/COD policy if enabled. Do not claim online payments are active until a real provider account, credentials, webhook signature verification and reconciliation tests are available.
+
+### EC-05 — Delivery and fulfillment
+- Shipping address book, serviceability/zone rules, quote expiry, courier/service choice, shipping cost source, packing, tracking code, shipment events, delivery confirmation, failed delivery and cancellation/return edge cases.
+- Provider integration remains off until credentials and live quote/waybill contracts are configured. No fabricated courier rates or tracking.
+
+### EC-06 — Commercial rules and customer lifecycle
+- Admin-managed coupons/discount rules, minimum spend, expiry, per-customer limits, usage limits, campaign visibility, price validation, wishlists, saved vehicles, reorder, order history, notifications and sourcing requests.
+- Promotions must be server-calculated, auditable and protected against double redemption; no fake campaigns or KPIs.
+
+### EC-07 — Super Admin commerce operations
+- Unified order inbox with channel, timeline, payment, shipping, reservation expiry, exception queues and filters; safe status transitions, cancellation, refund, returns, fulfillment, manual shipping quote, customer communication history and audit.
+- Operational overview uses real authorized queries; actions require role checks, confirmation, idempotency and server-side audit. Customer support cannot mutate paid/refund/inventory state without permission.
+
+### EC-08 — Commerce integration and reliability
+- WhatsApp deep link + optional Cloud API/outbox; payment adapter/webhook; logistics adapter; email/in-app status notifications; retry/dead-letter visibility; correlation IDs and reconciliation tools.
+- Provider credentials remain server-only. Verify webhook authenticity and idempotency; integrations stay disabled until configured. Do not add a new backend, database or parallel commerce system.
+
+### EC-09 — Commerce acceptance gate
+- CI lint/typecheck/build and focused API/database transaction tests; migration-chain/RLS/grant inspection; no unauthorized customer/admin writes; idempotency and concurrency; checkout replay and oversell; payment webhook replay/signature rejection; WhatsApp order handoff states; shipping quote expiry; return/refund guards.
+- Browser QA for public routes, empty/error states and responsive overflow at 360/390/820/1440 px. Authenticated customer/staff transaction tests require approved test identities and belong in Phase 12; no production order/test mutations without approval.
+- Record exact commit, CI run, deployment IDs, health/smoke results, remaining provider configuration blockers and rollback path.
+
+### Reference patterns researched
+- Astra Otoparts product taxonomy and filters by brand, vehicle application and product classification: https://international.astraotoshop.com/product?category=Spare+Parts
+- Garuda Motor's assisted spare-part discovery via WhatsApp and part number/vehicle details: https://www.garudamotor.com/
+- WooCommerce Quick WhatsApp documents cart summaries and post-checkout order references: https://woocommerce.com/document/quick-whatsapp-chat-and-orders-for-woocommerce/
+- WooCommerce Order on WhatsApp documents order creation/status, shipping/payment choices and payment links: https://woocommerce.com/products/order-on-whatsapp-for-woocommerce/
+- Meta WhatsApp Business Platform examples document webhooks, order payloads and message-status events: https://github.com/fbsamples/whatsapp-api-examples
+
+These are product-pattern references, not evidence that OtoClinic has those provider integrations enabled. Copy the useful workflow patterns, not another vendor's UI or backend.
+
 ## Phase 10 — AI and search (NOT IMPLEMENTED)
 - Part number normalization, evidence-backed candidate search, confidence/uncertainty.
 - AI cannot independently publish uncertain fitment, price, or product data.
@@ -114,14 +167,12 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 - A green build is not the same as verified production deployment.
 
 ## Execution order
-1. Phase 05 catalog lifecycle and fitment review APIs closed with verified CI and Admin smoke evidence; full active-user E2E remains Phase 12.
-2. Phase 06 supplier onboarding, private document verification, sourcing offers, exact candidate matching, deduplication, and audit are closed for feature progression; authenticated session/upload E2E remains Phase 12.
-3. Phase 07 inventory ledger mutations, order lifecycle, payment review, fulfillment, returns/refunds and expiry-release operation are closed for feature progression; authenticated session E2E remains Phase 12.
-4. Phase 08 Super Admin Control Plane is closed for feature progression; authenticated role/RLS/IDOR E2E remains Phase 12.
-5. Complete Phase 09 customer vehicle selection, product detail, cart, checkout and tracking.
-6. Add Phase 10 evidence-based AI/search.
-7. Add Phase 11 provider integrations only when the real provider and credentials are configured.
-8. Run the full Phase 12 release gate, including real active-user authorization sessions.
+1. Preserve Phase 05 catalog/fitment, Phase 06 supplier/sourcing, Phase 07 inventory/orders, and Phase 08 Super Admin primitives; reconcile any discrepancy against live schema/source before changing them.
+2. Complete Phase 09 customer PWA and close its responsive/public-route gate.
+3. Execute EC-01 through EC-09 in the E-Commerce Completion Program above. This owner-priority commerce gate supersedes starting AI/search; Phase 10 must remain deferred until it is closed.
+4. Promote only the required Phase 11 integration work (WhatsApp, payment and logistics adapters) into EC-03/04/05/08, and activate each provider only after credentials/webhook verification are present.
+5. Add Phase 10 evidence-based AI/search only after the complete e-commerce gate is accepted.
+6. Run Phase 12 full release gate, including real active-user authorization sessions, RLS/IDOR, accessibility, performance, webhook and transaction E2E.
 
 ## Working policy
 - Implementation commits go directly to \`main\` as requested.
