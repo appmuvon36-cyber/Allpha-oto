@@ -36,10 +36,20 @@ class ShippingAddress(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class ShippingQuoteSelection(BaseModel):
+    destination_id: str = Field(min_length=1, max_length=32)
+    destination_search: str = Field(min_length=3, max_length=100)
+    courier: str = Field(min_length=2, max_length=30)
+    service: str = Field(min_length=1, max_length=80)
+    cost: int = Field(ge=0, le=100000000)
+
+    model_config = {"extra": "forbid"}
+
+
 class CheckoutRequest(BaseModel):
-    # Cart contents are read from the authenticated customer's persisted cart.
-    # Client-supplied items/prices are deliberately rejected.
+    # Cart contents and shipping fee are validated server-side.
     shipping_address: ShippingAddress
+    shipping_quote: ShippingQuoteSelection | None = None
 
     model_config = {"extra": "forbid"}
 
@@ -162,15 +172,27 @@ async def checkout(
     if identity.get("role") != "customer":
         raise HTTPException(status_code=403, detail="Checkout requires a customer account.")
 
-    # Do not create a payable order with a fabricated zero shipping fee. RajaOngkir
-    # requires a configured origin, destination IDs, package weight and a live quote.
-    # Those inputs are not yet reliably available from the current catalog/address
-    # contract, so checkout stays fail-closed until a quote is calculated and bound
-    # to the order server-side.
-    raise HTTPException(
-        status_code=503,
-        detail="Checkout sementara belum tersedia karena tarif kurir belum berhasil dikutip. Silakan coba lagi setelah ongkir terverifikasi.",
+    if request.shipping_quote is None:
+        raise HTTPException(status_code=422, detail="Pilih layanan ongkir RajaOngkir sebelum checkout.")
+    # Recalculate the selected service on the server; never trust a client price.
+    from app.shipping import ShippingQuoteRequest, quote_shipping
+    live_quote = await quote_shipping(
+        ShippingQuoteRequest(
+            destination_id=request.shipping_quote.destination_id,
+            destination_search=request.shipping_quote.destination_search,
+            courier=request.shipping_quote.courier,
+        ),
+        identity,
     )
+    selected = next(
+        (q for q in live_quote["quotes"]
+         if q["courier"].casefold() == request.shipping_quote.courier.casefold()
+         and q["service"].casefold() == request.shipping_quote.service.casefold()),
+        None,
+    )
+    if selected is None or selected["cost"] != request.shipping_quote.cost:
+        raise HTTPException(status_code=409, detail="Tarif ongkir berubah. Hitung ulang dan pilih layanan kembali.")
+    server_shipping_fee = int(selected["cost"])
 
     carts = await supabase_get(
         "shopping_carts",
@@ -198,10 +220,26 @@ async def checkout(
         normalized.append({"product_id": product_id, "quantity": quantity})
     if not normalized:
         raise HTTPException(status_code=422, detail="Keranjang masih kosong.")
+    shipping_address_snapshot = request.shipping_address.model_dump(mode="json", exclude_none=True)
+    shipping_address_snapshot["shipping_quote"] = {
+        "provider": "rajaongkir",
+        "origin_id": live_quote["origin"]["id"],
+        "origin_label": live_quote["origin"]["label"],
+        "destination_id": live_quote["destination"]["id"],
+        "destination_label": live_quote["destination"]["label"],
+        "courier": selected["courier"],
+        "courier_name": selected["courier_name"],
+        "service": selected["service"],
+        "description": selected["description"],
+        "cost": server_shipping_fee,
+        "weight_grams": live_quote["weight_grams"],
+        "quoted_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+        "expires_in_seconds": live_quote["expires_in_seconds"],
+    }
     result = await order_rpc("checkout", None, {
         "items": normalized,
-        "shipping_address": request.shipping_address.model_dump(mode="json", exclude_none=True),
-        "shipping_fee": "0",
+        "shipping_address": shipping_address_snapshot,
+        "shipping_fee": str(server_shipping_fee),
     }, idempotency_key, identity)
     return {"result": result}
 
