@@ -39,6 +39,17 @@ class MarketplaceImageImportValidationTests(unittest.TestCase):
             main.validate_marketplace_image_url("https://example.com/product", listing=True)
         self.assertEqual(caught.exception.status_code, 422)
 
+    def test_extracts_current_marketplace_image_from_listing_metadata(self):
+        page = '<meta property="og:image" content="https://p16-images-common-sign-sg.tokopedia-static.net/image.jpeg?sig=1">'
+        self.assertEqual(
+            main.extract_marketplace_image_url(page),
+            "https://p16-images-common-sign-sg.tokopedia-static.net/image.jpeg?sig=1",
+        )
+
+    def test_ignores_unapproved_image_hosts_in_listing_metadata(self):
+        page = '<meta property="og:image" content="https://example.com/image.jpeg">'
+        self.assertIsNone(main.extract_marketplace_image_url(page))
+
     def test_image_signature_detection(self):
         self.assertEqual(main.detect_product_image_type(b"\xff\xd8\xff\x00"), "image/jpeg")
         self.assertEqual(main.detect_product_image_type(b"\x89PNG\r\n\x1a\nrest"), "image/png")
