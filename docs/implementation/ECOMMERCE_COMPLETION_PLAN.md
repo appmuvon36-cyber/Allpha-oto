@@ -132,3 +132,12 @@ Start with EC-01/EC-02 gap analysis and customer/admin workflow mapping; then im
 - Customer cart UI now searches destination, allows location disambiguation, and displays live courier/service/ETD/IDR quotes and a subtotal-plus-shipping estimate.
 - The cart UI displays live courier quotes and shipping estimates. The API re-quotes the selected service and validates address/weight, but checkout remains closed: the current database RPC can be invoked by an authenticated client and does not yet independently validate provider quote provenance. The zero-fee database guard is deliberately preserved until that transaction boundary is secured. No order/payment transactions were run.
 - CI is expected to apply the new migration on its disposable database. Production migration application and deployment still need to be confirmed; no new database/service was created.
+
+
+## EC-02 signed quote binding — 19 October 2026
+
+- Added a server-only HMAC signing secret shared between Railway API and Supabase Vault; it is not committed to the repository or exposed to the browser.
+- The checkout API re-quotes the selected courier/service, signs user + origin + destination + service + price + package weight + quote timestamp/TTL. The existing transactional `oto_order_mutate` RPC validates the signature using Vault, verifies quote freshness, fee equality, and the address snapshot, then creates the order and stock reservation in the same transaction.
+- The zero-shipping-only constraint is removed only in the same additive migration that installs the signature guard. Direct authenticated RPC calls cannot fabricate non-zero shipping fees without the server signature.
+- Admin catalog now validates package weight before creating/updating a product. Customer cart checkout is enabled only when a live quote is selected; server/database validation remains authoritative.
+- Real courier quote availability still depends on the manually configured RajaOngkir API key and a unique origin location result. No production order or payment was created for testing.
