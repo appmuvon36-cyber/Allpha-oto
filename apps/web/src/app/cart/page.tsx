@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, LogIn, Minus, Plus, RefreshCw, ShoppingCart, Truck } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
