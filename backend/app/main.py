@@ -182,7 +182,7 @@ async def supabase_get(
 
 async def supabase_write(method: str, table: str, access_token: str, payload: dict[str, Any], filters: dict[str, str] | None = None) -> list[dict[str, Any]]:
     """Write a small allowlisted payload through PostgREST with the caller JWT; RLS remains authoritative."""
-    if method not in {"POST", "PATCH"} or table not in {"product_categories"}:
+    if method not in {"POST", "PATCH"} or table not in {"product_categories", "product_media"}:
         raise HTTPException(status_code=422, detail="Unsupported data mutation.")
     supabase_url, anon_key = require_supabase_configuration()
     headers = {"apikey": anon_key, "Authorization": f"Bearer {access_token}", "Content-Type": "application/json", "Accept": "application/json", "Prefer": "return=representation"}
@@ -549,6 +549,40 @@ async def supabase_catalog_rpc(
         raise HTTPException(status_code=503, detail="Could not reach catalog service.") from exc
 
 
+async def verify_product_media_upload(storage_path: str, content_type: str, declared_size: int, expected_sha256: str, access_token: str) -> str:
+    """Read the caller-uploaded private product image back from Storage and verify its bytes before registering metadata."""
+    supabase_url, anon_key = require_supabase_configuration()
+    encoded_path = quote(storage_path, safe="/")
+    headers = {"apikey": anon_key, "Authorization": f"Bearer {access_token}"}
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.get(f"{supabase_url}/storage/v1/object/product-media/{encoded_path}", headers=headers)
+        if response.status_code in (401, 403):
+            raise HTTPException(status_code=403, detail="Product media storage access is not permitted.")
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Uploaded product image was not found.")
+        if response.status_code == 429 or response.status_code >= 500:
+            raise HTTPException(status_code=503, detail="Product media storage is temporarily unavailable.")
+        if response.status_code != 200:
+            raise HTTPException(status_code=422, detail="Uploaded product image could not be verified.")
+        actual_size = len(response.content)
+        actual_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if actual_size < 1 or actual_size > 15728640 or actual_size != declared_size:
+            raise HTTPException(status_code=422, detail="Uploaded image size does not match its declaration.")
+        if actual_type != content_type.lower():
+            raise HTTPException(status_code=422, detail="Uploaded image content type does not match its declaration.")
+        actual_sha256 = hashlib.sha256(response.content).hexdigest()
+        if actual_sha256.lower() != expected_sha256.lower():
+            raise HTTPException(status_code=422, detail="Uploaded image checksum does not match its bytes.")
+        return actual_sha256
+    except HTTPException:
+        raise
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail="Product image verification timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Could not verify product image storage object.") from exc
+
+
 async def verify_supplier_document_upload(
     storage_path: str,
     content_type: str,
@@ -704,6 +738,42 @@ async def mutate_catalog(
         idempotency_key, identity["_access_token"],
     )
     return {"result": result}
+
+
+class ProductMediaRegister(BaseModel):
+    storage_path: str = Field(min_length=3, max_length=500)
+    alt_text: str = Field(min_length=3, max_length=300)
+    content_type: str = Field(min_length=3, max_length=100)
+    byte_size: int = Field(ge=1, le=15728640)
+    sha256: str = Field(pattern=r"^[a-fA-F0-9]{64}$")
+    rights_status: str = Field(pattern=r"^(unknown|permission_granted|licensed|public_domain|user_owned|not_permitted)$")
+    rights_evidence_note: str | None = Field(default=None, max_length=2000)
+    model_config = {"extra": "forbid"}
+
+
+@app.post("/v1/admin/catalog/products/{product_id}/media", tags=["catalog"], status_code=201)
+async def register_admin_product_media(product_id: UUID, request: ProductMediaRegister = Body(...), identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "moderator"))) -> dict[str, Any]:
+    user = identity.get("user") or {}
+    actor_id = user.get("id")
+    if not actor_id: raise HTTPException(status_code=401, detail="Authenticated user required.")
+    if request.content_type.lower() not in {"image/jpeg", "image/png", "image/webp", "image/avif"}:
+        raise HTTPException(status_code=422, detail="Only JPEG, PNG, WebP, or AVIF product images are accepted.")
+    path_parts = request.storage_path.split("/")
+    if not request.storage_path.startswith(f"{product_id}/") or any(part in {"", ".", ".."} for part in path_parts):
+        raise HTTPException(status_code=422, detail="Product image path must stay inside its product folder.")
+    product_rows = await supabase_get("products", {"select": "id,status", "id": f"eq.{product_id}", "limit": "1"}, access_token=identity["_access_token"])
+    if not product_rows: raise HTTPException(status_code=404, detail="Product was not found.")
+    actual_sha256 = await verify_product_media_upload(request.storage_path, request.content_type, request.byte_size, request.sha256, identity["_access_token"])
+    payload = {
+        "product_id": str(product_id), "storage_path": request.storage_path, "source_name": "staff_file_upload",
+        "media_kind": "product_photo", "alt_text": request.alt_text.strip(), "content_type": request.content_type.lower(),
+        "byte_size": request.byte_size, "sha256": actual_sha256, "rights_status": request.rights_status,
+        "rights_evidence_note": request.rights_evidence_note.strip() if request.rights_evidence_note and request.rights_evidence_note.strip() else None,
+        "review_status": "pending", "is_primary": False, "captured_at": datetime.now(timezone.utc).isoformat(), "created_by": actor_id,
+    }
+    rows = await supabase_write("POST", "product_media", identity["_access_token"], payload)
+    if not rows: raise HTTPException(status_code=503, detail="Product image metadata was not returned after save.")
+    return {"media": rows[0], "review_status": "pending"}
 
 
 class ProductCategoryCreate(BaseModel):
