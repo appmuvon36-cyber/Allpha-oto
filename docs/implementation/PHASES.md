@@ -87,7 +87,7 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 
 ## Execution order
 1. Phase 05 catalog lifecycle and fitment review APIs closed with verified CI and Admin smoke evidence; full active-user E2E remains Phase 12.
-2. Close Phase 06 supplier onboarding, private document verification, sourcing offers, exact candidate matching, deduplication, and audit after deployment/smoke gates.
+2. Phase 06 supplier onboarding, private document verification, sourcing offers, exact candidate matching, deduplication, and audit are closed for feature progression; authenticated session/upload E2E remains Phase 12.
 3. Build Phase 07 inventory ledger mutations, order lifecycle and payment verification.
 4. Expand Phase 08 operational console and audit trail using the business APIs.
 5. Complete Phase 09 customer vehicle selection, product detail, cart, checkout and tracking.
