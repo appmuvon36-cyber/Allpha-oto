@@ -75,7 +75,7 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 - Verified: [CI #39183795427](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39183795427) and [contract/build #39183795349](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39183795349) passed; API/Admin/Web Railway deployments succeeded on commit be99226a50bc9923c37396e660195acd642e7d23. Public API auth guards and Admin login guards passed smoke checks.
 - No mock production rows or invented KPI. Authenticated role changes are not executed against production without a dedicated approved test identity. Authenticated RLS/IDOR/session matrix remains Phase 12.
 
-## Phase 09 — Customer PWA (IMPLEMENTED IN SOURCE; CI/PRODUCTION VERIFICATION PENDING)
+## Phase 09 — Customer PWA (CLOSED FOR FEATURE PROGRESSION; CI + API/WEB DEPLOYMENT + PUBLIC SMOKE VERIFIED)
 - Added public `GET /v1/catalog/products/{product_id}`, restricted to published product records and returning not-found for unpublished/missing IDs.
 - Added customer product detail at `/products/{productId}`, including condition, SKU/part number, package quantity, warranty, IDR price, and verified-only fitment evidence. Unknown stock is not represented as available.
 - Storefront product cards link to detail; API base URL respects `NEXT_PUBLIC_API_BASE_URL`.
@@ -84,7 +84,7 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 - Service worker cache version advanced and excludes private `/account`, `/cart`, `/checkout`, `/login`, `/orders`, and `/supplier` navigations from cache. It caches only the app shell and same-origin static assets.
 - No schema migration or production data mutation was required. No mock products, stock, prices, users, or orders were added.
 - Focused API tests cover published detail, missing/unpublished detail, and invalid UUID. Authenticated RLS/IDOR/session E2E remains Phase 12.
-- Implementation record: [PHASE_09_CUSTOMER_PWA.md](./PHASE_09_CUSTOMER_PWA.md).
+- Verified CI: [OtoClinic CI #39185097017](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39185097017) and [Phase 05 contract/build #39185067815](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39185067815) passed. API deployment `71ab3e3d-42af-4cdb-9700-106ff197f516` and Web deployment `26218509-0f97-4280-b03f-2c48b2a4e919` succeeded on commit `609b4eaf848871640b0b6eb8571b0502b4901674`. Public route smoke and unauthenticated order 401 guard passed; live catalog/transaction tables remained empty.\n- Implementation and verification record: [PHASE_09_CUSTOMER_PWA.md](./PHASE_09_CUSTOMER_PWA.md).
 
 ## Phase 10 — AI and search (NOT IMPLEMENTED)
 - Part number normalization, evidence-backed candidate search, confidence/uncertainty.
