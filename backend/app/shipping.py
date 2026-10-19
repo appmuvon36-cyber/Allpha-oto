@@ -41,9 +41,9 @@ async def rajaongkir_request(method: str, path: str, *, params: dict[str, str] |
         raise HTTPException(status_code=503, detail="Tidak dapat terhubung ke layanan ongkir.") from exc
 
 async def resolve_origin() -> tuple[str, dict[str, Any]]:
-    if settings.rajaongkir_origin_id.strip():
-        return settings.rajaongkir_origin_id.strip(), {"id": settings.rajaongkir_origin_id.strip(), "label": settings.rajaongkir_origin_address}
-    body = await rajaongkir_request("GET", "destination/domestic-destination", params={"search": "Sasak Panjang", "limit": "50", "offset": "0"})
+    # Always resolve the warehouse against the live provider directory, even if
+    # an operator has filled ORIGIN_ID. A configured ID is a pin, not proof.
+    body = await rajaongkir_request("GET", "destination/domestic-destination", params={"search": settings.rajaongkir_origin_search.strip() or "Sasak Panjang", "limit": "50", "offset": "0"})
     matches = [
         row for row in (body.get("data") or [])
         if str(row.get("subdistrict_name", "")).strip().casefold() == "sasak panjang"
@@ -54,7 +54,11 @@ async def resolve_origin() -> tuple[str, dict[str, Any]]:
     ]
     if len(matches) != 1:
         raise HTTPException(status_code=503, detail="Lokasi gudang Sasak Panjang belum dapat diverifikasi secara unik dari RajaOngkir.")
-    return str(matches[0]["id"]), matches[0]
+    verified_id = str(matches[0]["id"])
+    configured_id = settings.rajaongkir_origin_id.strip()
+    if configured_id and configured_id != verified_id:
+        raise HTTPException(status_code=503, detail="RAJAONGKIR_ORIGIN_ID tidak cocok dengan hasil pencarian gudang terverifikasi.")
+    return verified_id, matches[0]
 
 @router.get("/v1/shipping/destinations", tags=["shipping"])
 async def search_shipping_destinations(search: str = Query(min_length=3, max_length=100), identity: dict[str, Any] = Depends(require_active_profile)) -> dict[str, Any]:
