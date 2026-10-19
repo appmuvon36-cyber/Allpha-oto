@@ -4,6 +4,7 @@ from decimal import Decimal
 from datetime import datetime, timezone
 import hashlib
 import hmac
+from urllib.parse import quote
 from typing import Any
 from uuid import UUID
 
@@ -69,8 +70,15 @@ class OrderMutation(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class WhatsAppHandoffMutation(BaseModel):
+    action: str = Field(pattern=r"^(confirm|decline)$")
+    note: str | None = Field(default=None, max_length=1000)
+
+    model_config = {"extra": "forbid"}
+
+
 async def phase07_rpc(function_name: str, body: dict[str, Any], token: str) -> Any:
-    if function_name not in {"oto_inventory_mutate", "oto_order_mutate", "oto_expire_reservations"}:
+    if function_name not in {"oto_inventory_mutate", "oto_order_mutate", "oto_expire_reservations", "oto_order_whatsapp_handoff"}:
         raise HTTPException(status_code=422, detail="Unsupported transaction operation.")
     url, anon_key = require_supabase_configuration()
     headers = {
@@ -285,7 +293,7 @@ async def list_customer_orders(
 ) -> dict[str, Any]:
     rows = await supabase_get(
         "oto_orders",
-        {"select": "id,status,subtotal,shipping_fee,total_amount,currency,tracking_code,shipped_at,delivered_at,created_at,updated_at",
+        {"select": "id,status,subtotal,shipping_fee,total_amount,currency,tracking_code,sales_channel,whatsapp_handoff_status,whatsapp_handoff_prepared_at,whatsapp_handoff_expires_at,shipped_at,delivered_at,created_at,updated_at",
          "customer_user_id": f"eq.{identity['user']['id']}", "order": "created_at.desc", "limit": str(limit), "offset": str(offset)},
         identity["_access_token"],
     )
@@ -296,7 +304,7 @@ async def list_customer_orders(
 async def get_order(order_id: UUID, identity: dict[str, Any] = Depends(require_active_profile)) -> dict[str, Any]:
     rows = await supabase_get(
         "oto_orders",
-        {"select": "id,customer_user_id,status,subtotal,shipping_fee,total_amount,currency,shipping_address,tracking_code,shipped_at,delivered_at,cancelled_at,created_at,updated_at",
+        {"select": "id,customer_user_id,status,subtotal,shipping_fee,total_amount,currency,shipping_address,tracking_code,sales_channel,whatsapp_handoff_status,whatsapp_handoff_prepared_at,whatsapp_handoff_expires_at,whatsapp_handoff_reviewed_at,whatsapp_handoff_review_note,shipped_at,delivered_at,cancelled_at,created_at,updated_at",
          "id": f"eq.{order_id}", "limit": "1"},
         identity["_access_token"],
     )
@@ -307,6 +315,73 @@ async def get_order(order_id: UUID, identity: dict[str, Any] = Depends(require_a
     payments = await supabase_get("oto_payment_events", {"select": "id,event_type,amount,method,provider_reference,status,review_note,reviewed_at,created_at", "order_id": f"eq.{order_id}", "order": "created_at.desc", "limit": "50"}, identity["_access_token"])
     returns = await supabase_get("oto_returns", {"select": "id,status,reason,requested_refund,refund_provider_reference,created_at,updated_at", "order_id": f"eq.{order_id}", "limit": "10"}, identity["_access_token"])
     return {"order": order, "items": items, "payments": payments, "returns": returns}
+
+
+@router.post("/v1/orders/{order_id}/whatsapp-handoff", tags=["orders"])
+async def prepare_whatsapp_handoff(
+    order_id: UUID,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    identity: dict[str, Any] = Depends(require_active_profile),
+) -> dict[str, Any]:
+    if identity.get("role") != "customer":
+        raise HTTPException(status_code=403, detail="WhatsApp handoff requires a customer account.")
+    # Deep links do not require the Cloud API, but must point to the configured
+    # official business number. Never guess or silently route to a random contact.
+    phone = "".join(ch for ch in settings.whatsapp_business_phone if ch.isdigit())
+    if phone.startswith("0"):
+        phone = "62" + phone[1:]
+    if not phone or len(phone) < 8 or len(phone) > 15:
+        raise HTTPException(status_code=503, detail="Kanal WhatsApp OtoClinic belum dikonfigurasi.")
+    result = await phase07_rpc(
+        "oto_order_whatsapp_handoff",
+        {"p_action": "prepare", "p_order_id": str(order_id), "p_payload": {}, "p_request_id": idempotency_key},
+        identity["_access_token"],
+    )
+    order = result.get("order") if isinstance(result, dict) else None
+    if not isinstance(order, dict) or str(order.get("id")) != str(order_id):
+        raise HTTPException(status_code=409, detail="Referensi pesanan WhatsApp tidak dapat disiapkan.")
+    items = await supabase_get(
+        "oto_order_items",
+        {"select": "sku_snapshot,name_snapshot,quantity,unit_price,line_total", "order_id": f"eq.{order_id}", "limit": "50"},
+        identity["_access_token"],
+    )
+    if not items:
+        raise HTTPException(status_code=409, detail="Rincian pesanan tidak tersedia untuk handoff.")
+    summary = "\n".join(
+        f"- {str(item.get('name_snapshot') or 'Produk')} (SKU {str(item.get('sku_snapshot') or '-')}) x {int(item.get('quantity') or 0)}"
+        for item in items
+    )
+    message = "\n".join([
+        "Halo OtoClinic, saya ingin menindaklanjuti pesanan yang sudah tercatat.",
+        f"Referensi pesanan: {order_id}",
+        f"Status pesanan: {str(order.get('status') or 'pending_payment')}",
+        "Rincian:",
+        summary,
+        f"Subtotal: Rp{int(Decimal(str(order.get('subtotal') or 0))):,}".replace(",", "."),
+        f"Ongkir tercatat: Rp{int(Decimal(str(order.get('shipping_fee') or 0))):,}".replace(",", "."),
+        f"Total tercatat: Rp{int(Decimal(str(order.get('total_amount') or 0))):,}".replace(",", "."),
+        "Catatan: status pembayaran tetap mengikuti sistem OtoClinic, bukan pesan WhatsApp.",
+    ])
+    return {
+        "result": result,
+        "whatsapp_url": f"https://wa.me/{phone}?text={quote(message, safe='')}",
+        "handoff_notice": "Tautan WhatsApp disiapkan. Ini tidak membuktikan pesan telah dikirim atau diterima.",
+    }
+
+
+@router.post("/v1/admin/orders/{order_id}/whatsapp-handoff", tags=["orders"])
+async def review_whatsapp_handoff(
+    order_id: UUID,
+    request: WhatsAppHandoffMutation = Body(...),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    identity: dict[str, Any] = Depends(require_roles("admin", "order_manager")),
+) -> dict[str, Any]:
+    result = await phase07_rpc(
+        "oto_order_whatsapp_handoff",
+        {"p_action": request.action, "p_order_id": str(order_id), "p_payload": {"note": request.note} if request.note else {}, "p_request_id": idempotency_key},
+        identity["_access_token"],
+    )
+    return {"result": result}
 
 
 @router.post("/v1/orders/{order_id}/payment-evidence", tags=["payments"])
@@ -409,7 +484,7 @@ async def list_admin_orders(
     allowed = {"pending_payment","payment_review","paid","processing","shipped","delivered","cancelled","return_requested","returned","partially_returned"}
     if status and status not in allowed:
         raise HTTPException(status_code=422, detail="Order status filter is invalid.")
-    params = {"select": "id,customer_user_id,status,subtotal,shipping_fee,total_amount,currency,tracking_code,created_at,updated_at",
+    params = {"select": "id,customer_user_id,status,subtotal,shipping_fee,total_amount,currency,tracking_code,sales_channel,whatsapp_handoff_status,whatsapp_handoff_prepared_at,whatsapp_handoff_expires_at,whatsapp_handoff_reviewed_at,whatsapp_handoff_review_note,created_at,updated_at",
               "order": "created_at.desc", "limit": str(limit), "offset": str(offset)}
     if status:
         params["status"] = f"eq.{status}"
