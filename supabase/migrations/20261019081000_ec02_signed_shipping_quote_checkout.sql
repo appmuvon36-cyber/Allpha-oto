@@ -1,4 +1,4 @@
--- EC-02: require a server-signed, fresh RajaOngkir quote in the database transaction.
+-- EC-02: require a server-signed, fresh RajaOngkir shipping_quote_json in the database transaction.
 -- The signing secret is stored separately in Supabase Vault and Railway; never commit it here.
 CREATE OR REPLACE FUNCTION public.oto_order_mutate(p_action text, p_order_id uuid, p_payload jsonb, p_request_id text)
  RETURNS jsonb
@@ -14,7 +14,7 @@ declare
  item jsonb; addr jsonb:=coalesce(p_payload->'shipping_address','{}'::jsonb); why text:=nullif(btrim(p_payload->>'reason'),'');
  eventid uuid; providerref text:=nullif(btrim(p_payload->>'provider_reference'),''); evidence text:=nullif(btrim(p_payload->>'evidence_reference'),'');
  tracking text:=nullif(btrim(p_payload->>'tracking_code'),''); refund numeric(14,2);
- quote jsonb; quote_secret text; quote_message text; quote_signature text; quote_time timestamptz; quote_cost numeric(14,2); quote_ttl integer;
+ shipping_quote_json jsonb; quote_secret text; quote_message text; quote_signature text; quote_time timestamptz; quote_cost numeric(14,2); quote_ttl integer;
 begin
  if a is null then raise exception using errcode='42501',message='authentication_required'; end if;
  select role,is_active into r,active from public.user_profiles where id=a;
@@ -50,29 +50,29 @@ begin
  elsif p_action='checkout' then
   if p_order_id is not null or jsonb_typeof(p_payload->'items')<>'array' or jsonb_array_length(p_payload->'items')<1 or jsonb_array_length(p_payload->'items')>50 then raise exception using errcode='22023',message='checkout_items_invalid'; end if;
   if jsonb_typeof(addr)<>'object' or length(btrim(coalesce(addr->>'recipient_name','')))<2 or length(btrim(coalesce(addr->>'phone','')))<6 or length(btrim(coalesce(addr->>'address','')))<8 or fee<0 or fee>100000000 then raise exception using errcode='22023',message='checkout_address_or_shipping_invalid'; end if;
-  quote:=p_payload->'shipping_quote';
-  if jsonb_typeof(quote)<>'object' then raise exception using errcode='22023',message='verified_shipping_quote_required'; end if;
+  shipping_quote_json:=p_payload->'shipping_quote';
+  if jsonb_typeof(shipping_quote_json)<>'object' then raise exception using errcode='22023',message='verified_shipping_quote_required'; end if;
   select decrypted_secret into quote_secret from vault.decrypted_secrets where name='otoclinic_rajaongkir_quote_signing_secret';
   if quote_secret is null then raise exception using errcode='55000',message='shipping_quote_verification_unavailable'; end if;
-  if nullif(quote->>'origin_id','') is null or nullif(quote->>'destination_id','') is null
-     or nullif(quote->>'courier','') is null or nullif(quote->>'service','') is null
-     or nullif(quote->>'quoted_at','') is null or nullif(quote->>'weight_grams','') is null
-     or nullif(quote->>'cost','') is null or nullif(quote->>'expires_in_seconds','') is null then
+  if nullif(shipping_quote_json->>'origin_id','') is null or nullif(shipping_quote_json->>'destination_id','') is null
+     or nullif(shipping_quote_json->>'courier','') is null or nullif(shipping_quote_json->>'service','') is null
+     or nullif(shipping_quote_json->>'quoted_at','') is null or nullif(shipping_quote_json->>'weight_grams','') is null
+     or nullif(shipping_quote_json->>'cost','') is null or nullif(shipping_quote_json->>'expires_in_seconds','') is null then
     raise exception using errcode='22023',message='shipping_quote_fields_required';
   end if;
-  quote_time:=(quote->>'quoted_at')::timestamptz;
-  quote_cost:=(quote->>'cost')::numeric;
-  quote_ttl:=(quote->>'expires_in_seconds')::integer;
+  quote_time:=(shipping_quote_json->>'quoted_at')::timestamptz;
+  quote_cost:=(shipping_quote_json->>'cost')::numeric;
+  quote_ttl:=(shipping_quote_json->>'expires_in_seconds')::integer;
   if quote_cost<0 or quote_cost>100000000 or quote_ttl<60 or quote_ttl>3600
-     or (quote->>'weight_grams')::integer<1
+     or (shipping_quote_json->>'weight_grams')::integer<1
      or quote_time<now()-make_interval(secs=>quote_ttl) or quote_time>now()+interval '1 minute'
      or fee<>quote_cost
-     or (addr->'shipping_quote') is distinct from (quote-'signature') then
+     or (addr->'shipping_quote') is distinct from (shipping_quote_json-'signature') then
     raise exception using errcode='22023',message='shipping_quote_snapshot_invalid_or_expired';
   end if;
-  quote_message:=a::text||'|'||(quote->>'origin_id')||'|'||(quote->>'destination_id')||'|'||(quote->>'courier')||'|'||(quote->>'service')||'|'||(quote->>'cost')||'|'||(quote->>'weight_grams')||'|'||(quote->>'quoted_at')||'|'||(quote->>'expires_in_seconds');
+  quote_message:=a::text||'|'||(shipping_quote_json->>'origin_id')||'|'||(shipping_quote_json->>'destination_id')||'|'||(shipping_quote_json->>'courier')||'|'||(shipping_quote_json->>'service')||'|'||(shipping_quote_json->>'cost')||'|'||(shipping_quote_json->>'weight_grams')||'|'||(shipping_quote_json->>'quoted_at')||'|'||(shipping_quote_json->>'expires_in_seconds');
   quote_signature:=encode(extensions.hmac(convert_to(quote_message,'UTF8'),convert_to(quote_secret,'UTF8'),'sha256'),'hex');
-  if quote_signature is distinct from quote->>'signature' then
+  if quote_signature is distinct from shipping_quote_json->>'signature' then
     raise exception using errcode='42501',message='shipping_quote_signature_invalid';
   end if;
   for item in select value from jsonb_array_elements(p_payload->'items') order by value->>'product_id' loop
