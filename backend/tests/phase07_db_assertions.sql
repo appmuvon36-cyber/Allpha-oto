@@ -61,7 +61,20 @@ begin
     raise exception 'phase07 inventory ledger did not record reservation and consumption events';
   end if;
   if not exists(select 1 from public.inventory_ledger where reference_type='return' and reference_id=return_id and movement='return') then raise exception 'phase07 return restock ledger event missing'; end if;
-end $$;
+
+  -- Reservation expiry must cancel unpaid orders and release reserved stock atomically.
+  perform set_config('request.jwt.claim.sub',customer_id::text,true);
+  result:=public.oto_order_mutate('checkout',null,jsonb_set(checkout_payload,'{items,0,quantity}','2'::jsonb),'phase07-checkout-expiry-01');
+  order_id:=(result#>>'{order,id}')::uuid;
+  update public.inventory_reservations ir set expires_at=now()-interval '1 minute' where ir.order_id=order_id and ir.status='reserved';
+  perform set_config('request.jwt.claim.sub',manager_id::text,true);
+  result:=public.oto_expire_reservations('phase07-expire-reservations-01');
+  if (result->>'cancelled_orders')::integer<>1 or (result->>'released_reservations')::integer<>1 then raise exception 'phase07 reservation expiry counts mismatch'; end if;
+  if (select o.status from public.oto_orders o where o.id=order_id)<>'cancelled' then raise exception 'phase07 expired checkout was not cancelled'; end if;
+  if (select b.reserved from public.inventory_balances b where b.product_id='07000000-0000-4000-8000-000000000003'::uuid)<>0 then raise exception 'phase07 expired reservation remained reserved'; end if;
+  result:=public.oto_expire_reservations('phase07-expire-reservations-01');
+  if result->>'replayed'<>'true' then raise exception 'phase07 reservation expiry retry was not idempotent'; end if;
+end $;
 
 do $$
 begin
