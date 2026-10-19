@@ -57,9 +57,10 @@ begin
      or not exists(select 1 from public.audit_logs where request_id='phase07-refund-record-001') then
     raise exception 'phase07 audit trail missing critical transaction';
   end if;
-  if (select count(*) from public.inventory_ledger where reference_type='order' and reference_id=order_id)<3 then
-    raise exception 'phase07 inventory ledger did not record reservation, release/consumption and return events';
+  if (select count(*) from public.inventory_ledger where reference_type='order' and reference_id=order_id)<2 then
+    raise exception 'phase07 inventory ledger did not record reservation and consumption events';
   end if;
+  if not exists(select 1 from public.inventory_ledger where reference_type='return' and reference_id=return_id and movement='return') then raise exception 'phase07 return restock ledger event missing'; end if;
 end $$;
 
 do $$
