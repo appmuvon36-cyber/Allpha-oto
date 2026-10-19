@@ -9,6 +9,11 @@ class Phase09CustomerCatalogTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(main.app)
         self.old_get = main.supabase_get
+        self.old_supabase_url = main.settings.supabase_url
+        self.old_supabase_anon_key = main.settings.supabase_anon_key
+        # Public catalog routes validate configuration before invoking the mocked data client.
+        main.settings.supabase_url = "https://example.supabase.co"
+        main.settings.supabase_anon_key = "test-anon-key"
         self.calls = []
 
         async def fake_get(table, params, access_token=None):
@@ -31,6 +36,8 @@ class Phase09CustomerCatalogTests(unittest.TestCase):
 
     def tearDown(self):
         main.supabase_get = self.old_get
+        main.settings.supabase_url = self.old_supabase_url
+        main.settings.supabase_anon_key = self.old_supabase_anon_key
 
     def test_public_product_detail_returns_only_published_lookup(self):
         response = self.client.get("/v1/catalog/products/00000000-0000-4000-8000-000000000001")
