@@ -58,6 +58,19 @@ class EC01SourcingStockContracts(unittest.TestCase):
         self.assertEqual(response.json()["items"][0]["stock_status"], "low_stock")
         self.assertEqual(response.json()["items"][0]["stock_checked_at"], "2026-10-19T00:00:00Z")
 
+    def test_public_category_endpoint_uses_restricted_rpc(self):
+        category_id = str(uuid4())
+        rows = [{
+            "id": category_id, "parent_id": None, "name": "Rem", "slug": "rem",
+            "code": "REM", "description": None, "vehicle_scope": "all",
+            "sort_order": 10, "is_active": True,
+        }]
+        with patch.object(api, "supabase_rpc", new_callable=AsyncMock, return_value=rows) as rpc:
+            response = self.client.get("/v1/catalog/categories")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["items"][0]["id"], category_id)
+        rpc.assert_awaited_once_with("oto_public_product_categories", {})
+
     def test_missing_stock_rpc_result_is_never_claimed_available(self):
         product_id = str(uuid4())
 
