@@ -56,3 +56,10 @@ URL gambar disimpan sebagai referensi marketplace dan diimpor ke bucket Supabase
 - `shopee-search-benchmarks-2026-10-19.csv`: 16 cuplikan harga Shopee yang belum layak diimpor.
 - `otoclinic-draft-import-batch-01.csv`: 100 kandidat untuk impor Admin.
 - `otoclinic-draft-import-batch-02.csv`: 8 kandidat sisanya.
+
+## Implementasi alur Admin/FastAPI
+
+- CSV impor mengosongkan kolom SKU agar FastAPI mengalokasikan SKU resmi per kategori saat impor.
+- Foto referensi marketplace disalin melalui `POST /v1/admin/catalog/products/{product_id}/media/import-marketplace` ke bucket privat `product-media`; URL CDN bertanda tangan akan diperbarui dari metadata listing bila memungkinkan.
+- Status hak foto selalu `unknown` dan review media `pending`; publikasi foto memerlukan bukti hak penggunaan yang sah.
+- Kondisi `unknown` hanya dapat disimpan sebagai draft. Constraint database menolak transisi ke review/approved/published sampai kondisi diverifikasi.
