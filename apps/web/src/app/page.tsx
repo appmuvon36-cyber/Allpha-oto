@@ -6,7 +6,7 @@ import { ArrowRight, CarFront, Search, ShieldCheck, Wrench, Bike, PackageSearch,
 import { PwaInstallPrompt } from "./pwa-client";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
-type Product = { id: string; name: string; sku: string; brand: string | null; part_number: string | null; category: string; condition: string; retail_price: number | null; status: string; created_at?: string | null; image_url?: string | null; images?: {id:string;url:string;alt_text:string;media_kind:string;is_primary:boolean}[] };
+type Product = { id: string; name: string; sku: string; brand: string | null; part_number: string | null; category: string; condition: string; retail_price: number | null; status: string; published_at?: string | null; image_url?: string | null; images?: {id:string;url:string;alt_text:string;media_kind:string;is_primary:boolean}[] };
 type Make = {id:string;name:string}; type Model = {id:string;make_id:string;name:string}; type Variant = {id:string;model_id:string;name:string;year_start:number|null;year_end:number|null;engine_code:string|null};
 const API = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://otoclinic-api-production.up.railway.app";
 
@@ -63,7 +63,7 @@ export default function HomePage() {
     finally{setCartBusy("");}
   }
   const filtered=products;
-  const recentProducts=products.filter(p=>p.created_at && Number.isFinite(Date.parse(p.created_at)) && Date.parse(p.created_at)>=Date.now()-30*24*60*60*1000);
+  const recentProducts=products.filter(p=>p.published_at && Number.isFinite(Date.parse(p.published_at)) && Date.parse(p.published_at)>=Date.now()-30*24*60*60*1000);
   const secondaryProducts=products.filter(p=>["used","refurbished","remanufactured","damaged_for_parts"].includes(p.condition));
   const money = (n: number | null) => n === null ? "Hubungi untuk harga" : new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
 
@@ -78,46 +78,34 @@ export default function HomePage() {
         <div className="flex shrink-0 items-center gap-2"><Link href="/cart" className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-bold text-slate-700 sm:text-sm"><ShoppingCart size={16}/> Keranjang</Link><PwaInstallPrompt/><a href="#katalog" className="hidden rounded-xl bg-[var(--color-primary)] px-3 py-2.5 text-xs font-bold text-white sm:inline-flex sm:px-4 sm:text-sm">Cari spare part</a></div>
       </div>
     </header>
-    <section className="mx-auto max-w-7xl px-3 pt-3 sm:px-6 sm:pt-5">
-      <div className="store-promo-banner relative isolate overflow-hidden rounded-2xl sm:rounded-3xl" aria-label="Banner informasi dan promosi OtoClinic">
-        <div className="store-promo-copy relative z-10 max-w-xl p-5 sm:p-8 lg:p-10">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-3 py-1 text-[10px] font-extrabold uppercase tracking-[.14em] text-white"><ShieldCheck size={13}/> OtoClinic · Spare part otomotif</span>
-          <h1 className="mt-3 max-w-lg text-2xl font-black leading-tight tracking-tight text-white sm:text-4xl">Cari spare part yang tepat untuk kendaraan Anda.</h1>
-          <p className="mt-2 max-w-md text-xs leading-5 text-white/85 sm:text-sm sm:leading-6">Telusuri katalog, periksa informasi kecocokan, dan pastikan kondisi barang sebelum memesan.</p>
-          <a href="#katalog" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-extrabold text-[var(--color-ink)] shadow-sm hover:bg-orange-50 sm:text-sm">Jelajahi katalog <ArrowRight size={15}/></a>
+    <section className="mx-auto max-w-7xl px-3 pt-3 sm:px-6 sm:pt-4" aria-label="Pencarian dan kendaraan">
+      <div className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5 sm:mb-4 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-orange-50 text-[var(--color-primary)]"><ShieldCheck size={19}/></span>
+          <div className="min-w-0"><p className="truncate text-xs font-extrabold sm:text-sm">Sparepart tepat, kendaraan tetap sehat</p><p className="text-[10px] text-slate-500 sm:text-xs">Cari, cocokkan, lalu periksa informasi produk.</p></div>
         </div>
-        <div className="store-promo-art" aria-hidden="true">
-          <div className="promo-orbit promo-orbit-one"></div><div className="promo-orbit promo-orbit-two"></div>
-          <div className="promo-part promo-part-disc"><Wrench size={50}/></div>
-          <div className="promo-part promo-part-shield"><ShieldCheck size={26}/></div>
-          <div className="promo-part promo-part-box"><PackageSearch size={30}/></div>
-        </div>
-        <span className="absolute bottom-3 right-3 rounded-md bg-black/20 px-2 py-1 text-[9px] font-bold tracking-wide text-white/80">BANNER PROMO</span>
+        <Link href="/cart" aria-label="Buka keranjang" className="relative grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 text-slate-700"><ShoppingCart size={19}/></Link>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 sm:mt-4 sm:gap-3">
-        <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white p-2.5 sm:gap-3 sm:p-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-orange-50 text-[var(--color-primary)]"><CarFront size={19}/></span><span className="min-w-0"><strong className="block text-[10px] leading-4 sm:text-xs">Cari part</strong><small className="block text-[9px] leading-3 text-slate-500 sm:text-[10px]">Mobil & motor</small></span></div>
-        <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white p-2.5 sm:gap-3 sm:p-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-700"><ShieldCheck size={19}/></span><span className="min-w-0"><strong className="block text-[10px] leading-4 sm:text-xs">Cek kecocokan</strong><small className="block text-[9px] leading-3 text-slate-500 sm:text-[10px]">Lihat bukti</small></span></div>
-        <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white p-2.5 sm:gap-3 sm:p-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-700"><PackageSearch size={19}/></span><span className="min-w-0"><strong className="block text-[10px] leading-4 sm:text-xs">Request part</strong><small className="block text-[9px] leading-3 text-slate-500 sm:text-[10px]">Jika belum ada</small></span></div>
-      </div>
-      <form onSubmit={e=>{e.preventDefault();document.getElementById("katalog")?.scrollIntoView({behavior:"smooth"});}} className="store-search mt-4 flex min-h-12 items-center gap-2 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm sm:mt-5 sm:min-h-14 sm:rounded-2xl sm:p-2">
-        <Search className="ml-2 shrink-0 text-slate-400" size={19}/>
-        <input aria-label="Cari nama spare part atau nomor part" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari nama, merek, SKU atau nomor part..." className="min-w-0 flex-1 bg-transparent px-1 py-2 text-xs outline-none placeholder:text-slate-400 sm:text-sm"/>
+      <form onSubmit={e=>{e.preventDefault();document.getElementById("katalog")?.scrollIntoView({behavior:"smooth"});}} className="store-search flex min-h-12 items-center gap-2 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm sm:min-h-14 sm:rounded-2xl sm:p-2">
+        <Search className="ml-2 shrink-0 text-slate-400" size={20}/>
+        <input aria-label="Cari nama spare part atau nomor part" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Nama spare part, merek, atau nomor part..." className="min-w-0 flex-1 bg-transparent px-1 py-2 text-xs outline-none placeholder:text-slate-400 sm:text-sm"/>
         <button className="min-h-10 rounded-lg bg-[var(--color-primary)] px-4 text-xs font-extrabold text-white sm:min-h-11 sm:rounded-xl sm:px-5 sm:text-sm">Cari</button>
       </form>
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <label className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2"><CarFront size={16} className="shrink-0 text-slate-400"/><select aria-label="Merek kendaraan" value={makeId} onChange={e=>setMakeId(e.target.value)} className="min-h-8 min-w-0 flex-1 bg-transparent text-xs outline-none"><option value="">Pilih merek kendaraan</option>{makes.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
-        <label className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2"><CarFront size={16} className="shrink-0 text-slate-400"/><select aria-label="Model kendaraan" value={modelId} onChange={e=>setModelId(e.target.value)} disabled={!makeId||models.length===0} className="min-h-8 min-w-0 flex-1 bg-transparent text-xs outline-none disabled:text-slate-400"><option value="">Pilih model</option>{models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
-        <label className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2"><CarFront size={16} className="shrink-0 text-slate-400"/><select aria-label="Varian dan tahun kendaraan" value={variantId} onChange={e=>setVariantId(e.target.value)} disabled={!modelId||variants.length===0} className="min-h-8 min-w-0 flex-1 bg-transparent text-xs outline-none disabled:text-slate-400"><option value="">Pilih varian / tahun</option>{variants.map(v=><option key={v.id} value={v.id}>{v.name} {v.year_start||v.year_end?("· "+(v.year_start??"?")+"–"+(v.year_end??"?")):""} {v.engine_code?("· "+v.engine_code):""}</option>)}</select></label>
+      <p className="mt-2 text-[10px] text-slate-500 sm:text-xs">Pastikan tipe dan tahun kendaraan sebelum membeli.</p>
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:mt-4 sm:grid-cols-3">
+        <label className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5"><CarFront size={17} className="shrink-0 text-slate-500"/><select aria-label="Merek kendaraan" value={makeId} onChange={e=>setMakeId(e.target.value)} className="min-h-8 min-w-0 flex-1 bg-transparent text-xs outline-none"><option value="">Semua merek / pilih kendaraan</option>{makes.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+        <label className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5"><CarFront size={17} className="shrink-0 text-slate-500"/><select aria-label="Model kendaraan" value={modelId} onChange={e=>setModelId(e.target.value)} disabled={!makeId||models.length===0} className="min-h-8 min-w-0 flex-1 bg-transparent text-xs outline-none disabled:text-slate-400"><option value="">Semua model</option>{models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+        <label className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5"><CarFront size={17} className="shrink-0 text-slate-500"/><select aria-label="Varian dan tahun kendaraan" value={variantId} onChange={e=>setVariantId(e.target.value)} disabled={!modelId||variants.length===0} className="min-h-8 min-w-0 flex-1 bg-transparent text-xs outline-none disabled:text-slate-400"><option value="">Semua varian / tahun</option>{variants.map(v=><option key={v.id} value={v.id}>{v.name} {v.year_start||v.year_end?("· "+(v.year_start??"?")+"–"+(v.year_end??"?")):""} {v.engine_code?("· "+v.engine_code):""}</option>)}</select></label>
       </div>
       {vehicleError&&<p role="status" className="mt-2 text-xs text-amber-700">{vehicleError}</p>}
       {variantId&&<button type="button" onClick={()=>setVariantId("")} className="mt-2 text-xs font-bold text-[var(--color-primary)] underline">Hapus filter kendaraan</button>}
     </section>
     <section id="kategori" className="mx-auto max-w-7xl px-4 pt-7 sm:px-6 sm:pt-10">
-      <div className="flex items-end justify-between gap-3"><div><p className="text-[11px] font-extrabold uppercase tracking-[.16em] text-[var(--color-primary)]">Belanja lebih cepat</p><h2 className="mt-1 text-xl font-extrabold tracking-tight sm:text-2xl">Cari berdasarkan kategori</h2></div><span className="hidden text-xs text-slate-500 sm:block">Pilih kategori untuk mencari katalog</span></div>
+      <div className="flex items-end justify-between gap-3"><div><p className="text-[11px] font-extrabold uppercase tracking-[.16em] text-[var(--color-primary)]">Kategori spare part</p><h2 className="mt-1 text-xl font-extrabold tracking-tight sm:text-2xl">Belanja berdasarkan kategori</h2></div><span className="hidden text-xs text-slate-500 sm:block">Pilih kategori untuk mencari katalog</span></div>
       <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6 sm:gap-3">{[{label:"Mesin",term:"mesin",icon:"⚙"},{label:"Kaki-kaki",term:"kaki-kaki",icon:"◉"},{label:"Kelistrikan",term:"kelistrikan",icon:"ϟ"},{label:"Body",term:"body",icon:"▧"},{label:"Sistem rem",term:"rem",icon:"◈"},{label:"Oli & filter",term:"filter",icon:"▤"}].map(item=><button key={item.label} type="button" onClick={()=>{setQuery(item.term);document.getElementById("katalog")?.scrollIntoView({behavior:"smooth"});}} className="flex min-h-[94px] flex-col items-start justify-center rounded-2xl border border-slate-200 bg-white p-3 text-left transition hover:border-orange-200 hover:bg-orange-50/50 sm:min-h-[112px] sm:p-4"><span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-xl bg-orange-50 text-lg text-[var(--color-primary)] sm:h-11 sm:w-11 sm:text-xl">{item.icon}</span><span className="mt-2 text-xs font-extrabold sm:text-sm">{item.label}</span></button>)}</div>
     </section>
     <section className="mx-auto max-w-7xl px-3 pt-7 sm:px-6 sm:pt-10" aria-labelledby="koleksi-title">
-      <div className="flex items-end justify-between gap-3"><div><p className="text-[10px] font-extrabold uppercase tracking-[.16em] text-[var(--color-primary)]">Temukan kebutuhan Anda</p><h2 id="koleksi-title" className="mt-1 text-lg font-black tracking-tight sm:text-2xl">Jelajahi koleksi</h2></div><a href="#katalog" className="text-[11px] font-extrabold text-[var(--color-primary)] sm:text-xs">Lihat semua</a></div>
+      <div className="flex items-end justify-between gap-3"><div><p className="text-[10px] font-extrabold uppercase tracking-[.16em] text-[var(--color-primary)]">Temukan kebutuhan Anda</p><h2 id="koleksi-title" className="mt-1 text-lg font-black tracking-tight sm:text-2xl">Pilihan katalog</h2></div><a href="#katalog" className="text-[11px] font-extrabold text-[var(--color-primary)] sm:text-xs">Lihat semua</a></div>
       <div className="collection-rail mt-3 flex gap-2 overflow-x-auto pb-2" aria-label="Kategori koleksi katalog">
         {[["Semua produk","katalog"],["Best seller","shelf-best-seller"],["Popular","shelf-popular"],["Secondary","shelf-secondary"],["Produk baru","shelf-new"],["Promo","shelf-promo"],["Iklan","shelf-ads"]].map(([label,id],i)=><a key={id} href={"#"+id} className={`shrink-0 rounded-full border px-4 py-2.5 text-xs font-extrabold ${i===0?"border-[var(--color-primary)] bg-[var(--color-primary)] text-white":"border-slate-200 bg-white text-slate-700 hover:border-orange-200 hover:text-[var(--color-primary)]"}`}>{label}</a>)}
       </div>
