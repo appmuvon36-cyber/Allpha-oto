@@ -74,3 +74,24 @@ Before enabling real integrations, confirm the provider account, production cred
 ## 8. Immediate implementation order
 
 Start with EC-01/EC-02 gap analysis and customer/admin workflow mapping; then implement EC-03 WhatsApp handoff as a recorded order channel, while payment and logistics adapter contracts are prepared. Close EC-09 before starting Phase 10 AI/search.
+## 10. EC-01 implementation log — 19 October 2026
+
+**State: IMPLEMENTED IN SOURCE; CI green; production deployment and browser acceptance still blocked/pending.**
+
+- Storefront: responsive navy/orange hero and CTA; mobile-first catalog search controls for name/brand, part number, condition, vehicle fitment and category.
+- Hierarchical categories: the customer UI shows active root categories and child navigation; selecting a parent filters products in that category and all active descendants. The backend resolves descendants from the active category master and filters published products by their category names. Existing product schema stores category as text, so a future additive category-ID migration may be considered only after compatibility mapping is proven.
+- Public stock status: additive migration adds public.oto_public_stock_status(uuid[]), returning only status and timestamp for published products, never raw inventory quantities. States are in stock, low stock, out of stock, stale (older than 24 hours), or unverified. The public function is granted to anon/authenticated; inventory table RLS and grants remain unchanged.
+- Sourcing requests: additive public.sourcing_requests table with customer ownership, idempotency key, part/vehicle details, quantity, optional contact phone, status and timestamps. RLS is enabled; customers can insert/read their own requests, while authorized staff roles can read the operational queue. FastAPI validates the active customer identity and Idempotency-Key; no guest or anonymous mutation is exposed.
+- Product detail: approved media gallery, SKU, condition, package quantity, warranty, part number, verified fitments/evidence, inventory-backed status and sourcing CTA. Cart action is offered only when stock status is in-stock or low-stock; otherwise the UI explains the status and directs customers to sourcing.
+- Automated tests: backend contract tests cover descendant category filtering, unknown stock remaining unverified, sourcing idempotency header, customer identity forwarding, and rejection of non-customer roles. GitHub Actions run 39208163496 on commit e1759c137593ba539f97861039e46e39054c07c4 completed SUCCESS; Web typecheck/build and API contract jobs completed successfully. This is not a substitute for production browser, session, or RLS integration testing.
+- Live Supabase verification: sourcing_requests exists with RLS enabled and three policies; oto_public_stock_status(uuid[]) exists. Live product, fitment, inventory-balance, and inventory-ledger counts at inspection were 0; no product or request rows were fabricated.
+- Production discrepancy: Railway production still points to earlier successful Web commit c0e317ab223e270785b89cdd543fce9432c36520 and API commit efe125d61fbb465a93c905e401b4f210ad4064ad. Read-only production checks returned HTTP 200 for /health and the catalog API returned an empty real catalog; GET /v1/sourcing/requests returned 404 on the old API deployment. Therefore, current production does not yet prove the new hero, sourcing route or stock-status UI. No request/order/payment was submitted. A live browser interaction attempt timed out; screenshot/HTML scrape succeeded but inspected the old deployed build.
+- Deployment is not marked complete. Do not call production UI QA passed until the existing Web/API services run the relevant main commits and read-only browser tests at 360, 390, 820 and 1440 px are recorded. No new Railway service/database was created and no destructive deployment action was run.
+
+### EC-01 acceptance remaining
+
+1. Deploy the existing Web and API services from canonical main after explicit release approval; confirm deployment commit hashes.
+2. Use the browser connector to verify hero, category hierarchy, filter requests, product detail, loading/error/empty states, and no horizontal overflow at 360/390/tablet/desktop viewports.
+3. Verify the sourcing API rejects missing/invalid identity and that an authenticated non-production test identity can create/read only its own request; do not submit a real customer request or create an order/payment.
+4. Verify the public stock RPC only returns published-product status and timestamp and that anonymous access cannot read inventory table quantities.
+5. Mark EC-01 closed only when all of the above have evidence. Then proceed to EC-02 (cart and checkout); keep Phase 10 AI deferred.
