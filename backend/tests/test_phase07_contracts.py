@@ -2,7 +2,10 @@ import unittest
 
 from fastapi.testclient import TestClient
 
+from pydantic import ValidationError
+
 from app.main import app
+from app.phase07 import CheckoutRequest
 
 
 class Phase07ContractTests(unittest.TestCase):
@@ -35,11 +38,23 @@ class Phase07ContractTests(unittest.TestCase):
     def test_checkout_requires_verified_bearer_identity(self):
         response = self.client.post(
             "/v1/checkout",
-            json={"items": [{"product_id": "00000000-0000-0000-0000-000000000001", "quantity": 1}],
-                  "shipping_address": {"recipient_name": "Test User", "phone": "081234567890", "address": "Jalan Test 123", "city": "Bogor", "province": "Jawa Barat"}},
+            json={"shipping_address": {"recipient_name": "Test User", "phone": "081234567890", "address": "Jalan Test 123", "city": "Bogor", "province": "Jawa Barat"}},
             headers={"Idempotency-Key": "phase07-checkout-test-001"},
         )
         self.assertEqual(response.status_code, 401)
+
+    def test_checkout_rejects_client_supplied_cart_items(self):
+        with self.assertRaises(ValidationError):
+            CheckoutRequest.model_validate({
+                "items": [{"product_id": "00000000-0000-0000-0000-000000000001", "quantity": 1}],
+                "shipping_address": {
+                    "recipient_name": "Test User",
+                    "phone": "081234567890",
+                    "address": "Jalan Test 123",
+                    "city": "Bogor",
+                    "province": "Jawa Barat",
+                },
+            })
 
     def test_inventory_mutation_requires_verified_bearer_identity(self):
         response = self.client.post(
