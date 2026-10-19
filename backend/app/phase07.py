@@ -35,7 +35,7 @@ class ShippingAddress(BaseModel):
     address: str = Field(min_length=8, max_length=500)
     city: str = Field(min_length=1, max_length=100)
     province: str = Field(min_length=1, max_length=100)
-    postal_code: str | None = Field(default=None, max_length=12)
+    postal_code: str = Field(min_length=5, max_length=5, pattern=r"^\d{5}$")
 
     model_config = {"extra": "forbid"}
 
@@ -190,7 +190,9 @@ async def checkout(
     )
     address_postal = (request.shipping_address.postal_code or "").strip()
     quote_postal = str(live_quote["destination"].get("postal_code") or "").strip()
-    if address_postal and quote_postal and address_postal != quote_postal:
+    if not address_postal or len(address_postal) != 5 or not address_postal.isdigit():
+        raise HTTPException(status_code=422, detail="Kode pos Indonesia 5 digit wajib diisi.")
+    if quote_postal and address_postal != quote_postal:
         raise HTTPException(status_code=422, detail="Kode pos alamat tidak cocok dengan lokasi tujuan ongkir.")
     address_city = request.shipping_address.city.strip().casefold()
     address_province = request.shipping_address.province.strip().casefold()
