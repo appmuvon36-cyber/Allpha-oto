@@ -7,7 +7,7 @@
 - **101 listing memiliki sinyal jumlah terjual yang terlihat**; 93 memiliki rating produk. Sinyal toko (misalnya total penjualan toko) dipisahkan dari jumlah terjual per produk.
 - **Kondisi terverifikasi dari judul:** 2 listing; **kondisi belum terverifikasi:** 106. Kondisi yang tidak terbukti tidak ditebak. Kandidat unknown dapat masuk draft tetapi database menolak transisi ke review/approved/published sampai kondisi diverifikasi.
 - Rentang harga listing yang teramati: **Rp5.975–Rp2.800.000**. Rentang keseluruhan ini bukan perbandingan produk sejenis; lihat harga per listing pada CSV.
-- **Shopee:** pencarian publik menghasilkan cuplikan harga dan sinyal populer, tetapi halaman produk yang dicoba meminta login/menampilkan verifikasi trafik. Nilai Shopee tidak direkayasa dan tidak digabung ke 108 listing terstruktur. File benchmark Shopee terpisah akan diperlukan untuk perbandingan harga lintas platform.
+- **Shopee:** 16 benchmark tambahan dicatat dalam `shopee-search-benchmarks-2026-10-19.csv` berdasarkan cuplikan hasil pencarian/kategori yang terlihat. Halaman produk Shopee yang dicoba meminta login/menampilkan verifikasi trafik, sehingga benchmark ini bukan PDP yang terverifikasi dan ditandai `import_eligible=no`; tidak digunakan sebagai produk draft atau bukti foto. Nilai ini hanya petunjuk awal untuk riset harga lintas platform, bukan pembanding final.
 
 ## Metode harga
 
@@ -27,6 +27,7 @@ URL gambar disimpan sebagai referensi marketplace dan diimpor ke bucket Supabase
 
 ## File
 
-- `marketplace-observations-2026-10-19.csv`: seluruh data listing dan sumber.
+- `marketplace-observations-2026-10-19.csv`: seluruh data listing Tokopedia dan sumber.
+- `shopee-search-benchmarks-2026-10-19.csv`: 16 cuplikan harga Shopee yang belum layak diimpor.
 - `otoclinic-draft-import-batch-01.csv`: 100 kandidat untuk impor Admin.
 - `otoclinic-draft-import-batch-02.csv`: 8 kandidat sisanya.
