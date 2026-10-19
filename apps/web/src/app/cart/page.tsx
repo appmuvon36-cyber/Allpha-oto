@@ -40,6 +40,16 @@ export default function CartPage(){
   return body;
  },[token]);
 
+ const addPendingProduct=useCallback(async(accessToken:string)=>{
+  const productId=new URLSearchParams(window.location.search).get("add");
+  if(!productId)return;
+  const response=await fetch(API+"/v1/cart/mutations",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+accessToken,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({action:"cart_add",product_id:productId,quantity:1})});
+  const body=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(body.detail??"Produk tidak dapat ditambahkan ke keranjang.");
+  window.history.replaceState({}, "", "/cart");
+  setNotice("Produk berhasil ditambahkan ke keranjang.");
+ },[]);
+
  const load=useCallback(async(accessToken:string)=>{
   setLoading(true);setError("");
   try{
@@ -60,8 +70,8 @@ export default function CartPage(){
   if(!supabase){setError("Autentikasi belum dikonfigurasi.");setLoading(false);return;}
   const {data:{session}}=await supabase.auth.getSession();
   if(!active)return;
-  if(session){setToken(session.access_token);await load(session.access_token);}else setLoading(false);
- })();return()=>{active=false};},[supabase,load]);
+  if(session){setToken(session.access_token);try{await addPendingProduct(session.access_token);}catch(e){setError(e instanceof Error?e.message:"Produk tidak dapat ditambahkan.");}await load(session.access_token);}else setLoading(false);
+ })();return()=>{active=false};},[supabase,load,addPendingProduct]);
 
  async function signIn(event:FormEvent<HTMLFormElement>){
   event.preventDefault();setBusy(true);setError("");setNotice("");
@@ -71,7 +81,7 @@ export default function CartPage(){
   const me=await fetch(API+"/v1/auth/me",{headers:{Authorization:"Bearer "+data.session.access_token},cache:"no-store"});
   const profile=await me.json().catch(()=>({}));
   if(!me.ok||!profile.profile?.is_active||profile.role!=="customer"){await supabase.auth.signOut();setError("Checkout hanya tersedia untuk akun pelanggan OtoClinic yang aktif.");setBusy(false);return;}
-  setToken(data.session.access_token);await load(data.session.access_token);setBusy(false);
+  setToken(data.session.access_token);try{await addPendingProduct(data.session.access_token);}catch(e){setError(e instanceof Error?e.message:"Produk tidak dapat ditambahkan.");}await load(data.session.access_token);setBusy(false);
  }
 
  async function updateQuantity(item:CartItem,quantity:number){
