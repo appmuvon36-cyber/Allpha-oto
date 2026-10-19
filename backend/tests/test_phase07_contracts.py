@@ -51,6 +51,14 @@ class Phase07ContractTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 401)
 
+    def test_checkout_requires_signed_shipping_quote_and_no_zero_fallback(self):
+        source = inspect.getsource(checkout)
+        self.assertIn("rajaongkir_quote_signing_secret", source)
+        self.assertIn("shipping_quote", source)
+        self.assertIn("hmac.new", source)
+        self.assertIn('\"shipping_fee\": str(server_shipping_fee)', source)
+        self.assertNotIn('\"shipping_fee\": \"0\"', source)
+
     def test_checkout_quote_is_optional_in_schema_but_server_required(self):
         request = CheckoutRequest.model_validate({
             "shipping_address": {
