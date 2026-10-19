@@ -123,3 +123,12 @@ Start with EC-01/EC-02 gap analysis and customer/admin workflow mapping; then im
 - No coupon is accepted or applied without an authoritative server-side promotion rule. Existing database transaction RPC remains the owner of item price snapshots, stock reservations, idempotency and payment evidence states.
 - Remaining integration prerequisites: confirm server-side `RAJAONGKIR_API_KEY`, configured warehouse/origin destination ID, canonical customer destination ID mapping, authoritative product package weights, allowed courier/service policy, quote expiry/revalidation, and persistence of the selected quote in the order transaction. Do not add these secrets to the web app or commit them.
 - No database migration or live Supabase write was performed in this change. Railway still points to earlier EC-01 commits at the time of inspection; EC-02 is not yet deployed.
+
+
+## EC-02 implementation log — customer-visible RajaOngkir quote integration (19 October 2026)
+
+- Added authenticated FastAPI endpoints for official RajaOngkir destination search and live domestic rate calculation. API key stays server-side. If the warehouse ID is not set, the API resolves it only when RajaOngkir returns one exact match for Sasak Panjang, Tajur Halang, Bogor, Jawa Barat; it never guesses a nearby ID.
+- Added nullable `products.weight_grams` via an additive migration. Existing products receive no fabricated weights; quote calculation rejects missing/invalid weights.
+- Customer cart UI now searches destination, allows location disambiguation, and displays live courier/service/ETD/IDR quotes and a subtotal-plus-shipping estimate.
+- Checkout intentionally remains blocked until the selected quote is persisted and revalidated atomically with the order RPC. This is the remaining critical EC-02 step; no order/payment transactions were run.
+- CI is expected to apply the new migration on its disposable database. Production migration application and deployment still need to be confirmed; no new database/service was created.
