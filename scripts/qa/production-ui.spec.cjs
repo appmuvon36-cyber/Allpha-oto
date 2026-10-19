@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- Playwright spec is intentionally CommonJS (.cjs).
 const { test, expect } = require("@playwright/test");
 
 const WEB = process.env.OTOCLINIC_WEB_URL || "https://otoclinic-web-production.up.railway.app";
