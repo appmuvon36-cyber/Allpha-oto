@@ -6,7 +6,7 @@ import { ArrowLeft, CheckCircle2, LogIn, Minus, Plus, RefreshCw, ShoppingCart, T
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://otoclinic-api-production.up.railway.app";
-type CartItem = { id: string; product_id: string; quantity: number; products: { id:string; sku:string; name:string; condition:string; retail_price:number; currency:string; status:string } };
+type CartItem = { id: string; product_id: string; quantity: number; products: { id:string; sku:string; name:string; condition:string; retail_price:number; currency:string; status:string; weight_grams:number|null } };\ntype Destination = {id:string;label:string;province:string;city:string;district:string;subdistrict:string;postal_code:string};\ntype ShippingQuote = {courier:string;courier_name:string;service:string;description:string;cost:number;etd:string};
 type Order = { id:string; status:string; subtotal:number; shipping_fee:number; total_amount:number; currency:string; tracking_code:string|null; created_at:string };
 const money=(n:unknown)=>new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(Number(n??0));
 const statuses:Record<string,string>={pending_payment:"Menunggu pembayaran",payment_review:"Bukti pembayaran sedang ditinjau",paid:"Pembayaran terverifikasi",processing:"Sedang diproses",shipped:"Dalam pengiriman",delivered:"Pesanan diterima",cancelled:"Dibatalkan",return_requested:"Retur diajukan",returned:"Retur selesai",partially_returned:"Retur sebagian"};
@@ -28,7 +28,7 @@ export default function CartPage(){
  const [city,setCity]=useState("");
  const [province,setProvince]=useState("");
  const [postalCode,setPostalCode]=useState("");
- const [latestOrder,setLatestOrder]=useState<Order|null>(null);
+ const [latestOrder,setLatestOrder]=useState<Order|null>(null);\n const [destinations,setDestinations]=useState<Destination[]>([]);\n const [destinationId,setDestinationId]=useState("");\n const [shippingQuotes,setShippingQuotes]=useState<ShippingQuote[]>([]);\n const [selectedQuote,setSelectedQuote]=useState<ShippingQuote|null>(null);\n const [shippingBusy,setShippingBusy]=useState(false);
  const [evidence,setEvidence]=useState("");
 
  const request=useCallback(async(path:string,init:RequestInit={})=>{
@@ -94,6 +94,35 @@ export default function CartPage(){
   finally{setBusy(false);}
  }
 
+ async function loadQuote(destination:Destination){
+  setShippingBusy(true);setError("");setShippingQuotes([]);setSelectedQuote(null);
+  try{
+   const search=postalCode.trim()||[destination.subdistrict,destination.district,destination.city].filter(Boolean).join(" ");
+   const body=await request("/v1/shipping/quote",{method:"POST",body:JSON.stringify({destination_id:destination.id,destination_search:search})});
+   const quotes=(body.quotes??[]) as ShippingQuote[];
+   setShippingQuotes(quotes);
+   if(quotes.length===1)setSelectedQuote(quotes[0]);
+   setNotice("Tarif aktual diperoleh dari RajaOngkir. Pilih layanan yang sesuai.");
+  }catch(e){setError(e instanceof Error?e.message:"Tarif kurir tidak tersedia.");}
+  finally{setShippingBusy(false);}
+ }
+ async function findShippingQuote(){
+  setShippingBusy(true);setError("");setNotice("");setShippingQuotes([]);setSelectedQuote(null);setDestinationId("");
+  try{
+   const search=postalCode.trim()||[city.trim(),province.trim()].filter(Boolean).join(" ");
+   if(search.length<3)throw new Error("Isi kode pos atau kota dan provinsi terlebih dahulu.");
+   const found=await request("/v1/shipping/destinations?search="+encodeURIComponent(search));
+   const choices=(found.items??[]) as Destination[];
+   setDestinations(choices);
+   const exactZip=postalCode.trim()?choices.filter((d)=>d.postal_code===postalCode.trim()):[];
+   if(exactZip.length===1){setDestinationId(exactZip[0].id);await loadQuote(exactZip[0]);}
+   else if(choices.length===1){setDestinationId(choices[0].id);await loadQuote(choices[0]);}
+   else if(choices.length===0)throw new Error("Lokasi tidak ditemukan. Periksa kode pos atau nama kecamatan.");
+   else setNotice("Pilih kecamatan/desa tujuan yang benar dari hasil RajaOngkir, lalu hitung ongkir.");
+  }catch(e){setError(e instanceof Error?e.message:"Ongkir tidak dapat dihitung.");}
+  finally{setShippingBusy(false);}
+ }
+
  async function checkout(event:FormEvent<HTMLFormElement>){
   event.preventDefault();setBusy(true);setError("");setNotice("");
   try{
@@ -153,8 +182,11 @@ export default function CartPage(){
       <label className="block text-sm font-semibold">Nomor telepon<input required minLength={6} value={phone} onChange={e=>setPhone(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5 font-normal"/></label>
       <label className="block text-sm font-semibold">Alamat lengkap<textarea required minLength={8} value={address} onChange={e=>setAddress(e.target.value)} rows={3} className="mt-1 w-full rounded-lg border p-2.5 font-normal"/></label>
       <div className="grid grid-cols-2 gap-3"><label className="block text-sm font-semibold">Kota<input required value={city} onChange={e=>setCity(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5 font-normal"/></label><label className="block text-sm font-semibold">Provinsi<input required value={province} onChange={e=>setProvince(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5 font-normal"/></label></div>
-      <label className="block text-sm font-semibold">Kode pos<input value={postalCode} onChange={e=>setPostalCode(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5 font-normal"/></label>
-      <div className="border-t pt-4"><div className="flex justify-between text-sm"><span>Subtotal</span><span>{money(subtotal)}</span></div><div className="mt-2 flex justify-between text-sm"><span>Ongkir</span><span className="font-semibold text-amber-700">Belum dihitung</span></div><div className="mt-3 flex justify-between font-bold"><span>Total sementara</span><span>{money(subtotal)}</span></div><button disabled={busy||items.length===0} className="mt-4 w-full rounded-xl bg-orange-600 p-3.5 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{busy?"Memproses…":"Buat pesanan & reservasi stok"}</button><p className="mt-2 text-xs leading-5 text-slate-500">Tarif kurir belum tersedia. Total di atas masih subtotal saja; jangan melakukan pembayaran sebelum ongkir dikonfirmasi. Server memeriksa harga dan stok kembali, lalu mencadangkan stok selama 30 menit.</p></div>
+      <label className="block text-sm font-semibold">Kode pos<input value={postalCode} onChange={e=>{setPostalCode(e.target.value);setShippingQuotes([]);setSelectedQuote(null);}} className="mt-1 w-full rounded-lg border p-2.5 font-normal"/></label>
+       <button type="button" disabled={shippingBusy||!items.length||!token} onClick={()=>void findShippingQuote()} className="w-full rounded-xl border border-orange-600 p-3 font-bold text-orange-700 disabled:opacity-50">{shippingBusy?"Mencari tarif…":"Cari & hitung ongkir"}</button>
+       {destinations.length>1&&<label className="block text-sm font-semibold">Pilih kecamatan / desa tujuan<select value={destinationId} onChange={e=>{setDestinationId(e.target.value);setShippingQuotes([]);setSelectedQuote(null);}} className="mt-1 w-full rounded-lg border p-2.5 font-normal"><option value="">Pilih lokasi yang sesuai</option>{destinations.map(d=><option key={d.id} value={d.id}>{d.label} {d.postal_code?("("+d.postal_code+")"):""}</option>)}</select><button type="button" disabled={shippingBusy||!destinationId} onClick={()=>{const d=destinations.find(x=>x.id===destinationId);if(d)void loadQuote(d)}} className="mt-2 w-full rounded-lg bg-slate-100 p-2.5 font-semibold disabled:opacity-50">Hitung untuk lokasi ini</button></label>}
+       {shippingQuotes.length>0&&<fieldset className="space-y-2 rounded-xl border p-3"><legend className="px-1 text-sm font-bold">Pilih layanan pengiriman</legend>{shippingQuotes.map((q,i)=><label key={q.courier+"-"+q.service+"-"+i} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"><input type="radio" name="shippingQuote" checked={selectedQuote===q} onChange={()=>setSelectedQuote(q)} className="mt-1"/><span className="min-w-0 flex-1"><span className="block font-semibold">{q.courier_name} · {q.service}</span><span className="block text-xs text-slate-500">{q.description}{q.etd?(" · Estimasi "+q.etd):""}</span></span><strong>{money(q.cost)}</strong></label>)}</fieldset>}
+      <div className="border-t pt-4"><div className="flex justify-between text-sm"><span>Subtotal</span><span>{money(subtotal)}</span></div><div className="mt-2 flex justify-between text-sm"><span>Ongkir</span><span className="font-semibold">{selectedQuote?money(selectedQuote.cost):"Belum dihitung"}</span></div><div className="mt-3 flex justify-between font-bold"><span>Total sementara</span><span>{money(subtotal+(selectedQuote?.cost??0))}</span></div><button disabled={true||busy||items.length===0||!selectedQuote} className="mt-4 w-full rounded-xl bg-orange-600 p-3.5 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{busy?"Memproses…":"Checkout belum aktif"}</button><p className="mt-2 text-xs leading-5 text-slate-500">{selectedQuote?"Tarif sudah tampil dari RajaOngkir, tetapi penyimpanan kutipan ke pesanan masih perlu diselesaikan. Checkout tetap ditutup agar total tidak salah.":"Cari dan pilih ongkir untuk melihat biaya pengiriman yang berlaku."}</p></div>
     </form>
     <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900"><p className="font-semibold">Tentang pembayaran</p><p className="mt-1 text-xs leading-5">Unggahan/referensi bukti transfer tidak otomatis melunasi pesanan. Tim operasional harus memverifikasi pembayaran terlebih dahulu.</p></div>
    </aside>
