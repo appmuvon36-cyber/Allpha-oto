@@ -22,6 +22,8 @@ class Phase07ContractTests(unittest.TestCase):
             ("POST", "/v1/shipping/quote"),
             ("POST", "/v1/cart/mutations"),
             ("POST", "/v1/checkout"),
+            ("POST", "/v1/orders/{order_id}/whatsapp-handoff"),
+            ("POST", "/v1/admin/orders/{order_id}/whatsapp-handoff"),
             ("GET", "/v1/orders"),
             ("GET", "/v1/orders/{order_id}"),
             ("POST", "/v1/orders/{order_id}/payment-evidence"),
