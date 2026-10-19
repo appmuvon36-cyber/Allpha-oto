@@ -674,13 +674,36 @@ async def supabase_catalog_rpc(
                 code = str(db_error.get("code", ""))
             except (ValueError, AttributeError):
                 message, code = "", ""
+            # Translate known RPC outcomes into actionable, non-sensitive messages.
+            # Never forward raw Postgres/PostgREST messages to the browser.
+            safe_validation_messages = {
+                "request_id_required_or_length_invalid": "Kunci idempotensi tidak valid. Muat ulang lalu coba lagi.",
+                "request_id_reused_for_different_operation": "Permintaan bertabrakan dengan aksi sebelumnya. Muat ulang katalog lalu ulangi aksi.",
+                "unsupported_catalog_action": "Aksi katalog tidak dikenali. Muat ulang halaman Admin.",
+                "product_id_required": "Pilih produk yang akan diproses.",
+                "product_and_variant_required": "Pilih produk dan varian kendaraan serta isi bukti kecocokan.",
+                "product_and_fitment_required": "Pilih produk dan bukti fitment yang akan ditinjau.",
+                "invalid_product_transition": "Status produk sudah berubah atau tidak mengizinkan aksi ini. Muat ulang katalog.",
+                "only_draft_or_rejected_products_are_editable": "Hanya produk draft atau ditolak yang dapat diedit.",
+                "publication_requirements_missing": "Produk belum memenuhi persyaratan publikasi. Periksa SKU, slug, nama, kategori, kondisi, harga, bukti sumber, dan berat kirim.",
+                "published_product_shipping_weight_required": "Berat kirim wajib diisi sebelum produk dipublikasikan.",
+                "rejection_reason_required": "Isi alasan penolakan sebelum melanjutkan.",
+                "fitment_evidence_required": "Bukti kecocokan kendaraan wajib diisi sebelum verifikasi.",
+                "fitment_review_status_invalid": "Keputusan review fitment tidak valid.",
+                "product_already_archived": "Produk sudah diarsipkan.",
+            }
             if code == "P0002" or "not_found" in message:
-                raise HTTPException(status_code=404, detail="Catalog record was not found.")
+                raise HTTPException(status_code=404, detail="Data katalog tidak ditemukan atau sudah tidak tersedia.")
             if code == "42501":
-                raise HTTPException(status_code=403, detail="Catalog operation is not permitted for this role.")
-            if code in ("22023", "22P02", "23505", "23514", "23502"):
-                raise HTTPException(status_code=422, detail="Catalog operation failed validation.")
-            raise HTTPException(status_code=503, detail="Catalog operation could not be completed.")
+                raise HTTPException(status_code=403, detail="Aksi tidak diizinkan untuk role akun ini atau sesi tidak lagi aktif.")
+            if message in safe_validation_messages:
+                raise HTTPException(status_code=422, detail=safe_validation_messages[message])
+            if code == "23505":
+                raise HTTPException(status_code=409, detail="Data katalog bertabrakan dengan perubahan lain. Muat ulang lalu coba lagi.")
+            if code in ("22023", "22P02", "23514", "23502", "23503"):
+                # Constraint names, SQL details and row values are intentionally not exposed.
+                raise HTTPException(status_code=422, detail="Data katalog belum memenuhi aturan validasi. Periksa kolom wajib dan status produk, lalu coba lagi.")
+            raise HTTPException(status_code=503, detail="Operasi katalog belum dapat diselesaikan. Coba lagi nanti.")
         return response.json()
     except HTTPException:
         raise
