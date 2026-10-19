@@ -51,7 +51,7 @@ begin
   perform public.oto_order_mutate('start_fulfillment',order_id,'{}'::jsonb,'phase07-fulfill-start-001');
   result:=public.oto_order_mutate('mark_shipped',order_id,'{"tracking_code":"CI-TRACK-001"}'::jsonb,'phase07-ship-001');
   if result#>>'{order,status}'<>'shipped' then raise exception 'phase07 shipment transition failed'; end if;
-  if (select b.on_hand from public.inventory_balances b where b.product_id=product_id)<>6 or (select reserved from public.inventory_balances where product_id=product_id)<>0 then raise exception 'phase07 ship did not consume reservation atomically'; end if;
+  if (select b.on_hand from public.inventory_balances b where b.product_id='07000000-0000-4000-8000-000000000003'::uuid)<>6 or (select b2.reserved from public.inventory_balances b2 where b2.product_id='07000000-0000-4000-8000-000000000003'::uuid)<>0 then raise exception 'phase07 ship did not consume reservation atomically'; end if;
   perform public.oto_order_mutate('mark_delivered',order_id,'{}'::jsonb,'phase07-deliver-001');
   select x.id into order_item_id from public.oto_order_items x where x.order_id=(select o2.id from public.oto_orders o2 where o2.customer_user_id=customer_id order by o2.created_at desc limit 1) limit 1;
   perform set_config('request.jwt.claim.sub',customer_id::text,true);
