@@ -2,8 +2,9 @@
 import Link from "next/link";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, CarFront, Search, ShieldCheck, Wrench, Bike, PackageSearch, CircleHelp, ShoppingCart, Check } from "lucide-react";
+import { ArrowRight, CarFront, Search, ShieldCheck, Wrench, Bike, PackageSearch, CircleHelp, ShoppingCart } from "lucide-react";
 import { PwaInstallPrompt } from "./pwa-client";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 type Product = { id: string; name: string; sku: string; brand: string | null; part_number: string | null; category: string; condition: string; retail_price: number | null; status: string };
 type Make = {id:string;name:string}; type Model = {id:string;make_id:string;name:string}; type Variant = {id:string;model_id:string;name:string;year_start:number|null;year_end:number|null;engine_code:string|null};
@@ -20,7 +21,9 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [makes,setMakes]=useState<Make[]>([]); const [models,setModels]=useState<Model[]>([]); const [variants,setVariants]=useState<Variant[]>([]);
-  const [makeId,setMakeId]=useState(""); const [modelId,setModelId]=useState(""); const [variantId,setVariantId]=useState(""); const [vehicleError,setVehicleError]=useState("");\n  const [cartBusy,setCartBusy]=useState("");\n  const [cartNotice,setCartNotice]=useState("");
+  const [makeId,setMakeId]=useState(""); const [modelId,setModelId]=useState(""); const [variantId,setVariantId]=useState(""); const [vehicleError,setVehicleError]=useState("");
+  const [cartBusy,setCartBusy]=useState("");
+  const [cartNotice,setCartNotice]=useState("");
 
   useEffect(() => {
     let active=true;
@@ -45,7 +48,21 @@ export default function HomePage() {
     fetch(API+"/v1/catalog/products?"+params.toString()).then(r=>{if(!r.ok)throw new Error();return r.json()}).then(d=>{if(active)setProducts((d.items??[]) as Product[])}).catch(()=>{if(active){setProducts([]);setError("Katalog belum dapat dimuat. Silakan coba kembali.")}}).finally(()=>{if(active)setLoading(false)});
     return ()=>{active=false};
   },[query,variantId]);
-  async function addToCart(productId:string){\n    setCartBusy(productId);setCartNotice("");\n    try{\n      const supabase=(await import("@/lib/supabase")).getSupabaseBrowserClient();\n      const {data:{session}}=supabase?await supabase.auth.getSession():{data:{session:null}} as any;\n      if(!session){window.location.assign("/cart?add="+encodeURIComponent(productId));return;}\n      const response=await fetch(API+"/v1/cart/mutations",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+session.access_token,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({action:"cart_add",product_id:productId,quantity:1})});\n      const body=await response.json().catch(()=>({}));\n      if(!response.ok)throw new Error(body.detail??"Produk tidak dapat ditambahkan.");\n      setCartNotice("Produk berhasil ditambahkan ke keranjang.");\n    }catch(e){setCartNotice(e instanceof Error?e.message:"Keranjang tidak dapat diperbarui.");}\n    finally{setCartBusy("");}\n  }\n  const filtered=products;
+  async function addToCart(productId:string){
+    setCartBusy(productId);setCartNotice("");
+    try{
+      const supabase=getSupabaseBrowserClient();
+      if(!supabase){setCartNotice("Autentikasi belum dikonfigurasi.");return;}
+      const {data:{session}}=await supabase.auth.getSession();
+      if(!session){window.location.assign("/cart?add="+encodeURIComponent(productId));return;}
+      const response=await fetch(API+"/v1/cart/mutations",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+session.access_token,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({action:"cart_add",product_id:productId,quantity:1})});
+      const body=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(body.detail??"Produk tidak dapat ditambahkan.");
+      setCartNotice("Produk berhasil ditambahkan ke keranjang.");
+    }catch(e){setCartNotice(e instanceof Error?e.message:"Keranjang tidak dapat diperbarui.");}
+    finally{setCartBusy("");}
+  }
+  const filtered=products;
   const money = (n: number | null) => n === null ? "Hubungi untuk harga" : new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
 
   return <main className="min-h-screen">
