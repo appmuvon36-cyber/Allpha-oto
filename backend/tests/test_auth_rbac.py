@@ -82,11 +82,11 @@ class AuthDependencyTests(unittest.IsolatedAsyncioTestCase):
 class ApiFeatureTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(main.app)
-        self.original_supabase_get = main.supabase_get
+        self.original_supabase_get = main.supabase_get\n        self.original_public_product_media = main.public_product_media\n\n        async def fake_media(product_ids):\n            return {}\n\n        main.public_product_media = fake_media
 
     def tearDown(self):
         main.app.dependency_overrides.clear()
-        main.supabase_get = self.original_supabase_get
+        main.supabase_get = self.original_supabase_get\n        main.public_product_media = self.original_public_product_media
 
     def test_public_catalog_is_limited_to_published_rows(self):
         captured = {}
