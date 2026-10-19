@@ -25,10 +25,20 @@ class CartMutation(BaseModel):
     quantity: int | None = Field(default=None, ge=1, le=100)
 
 
+class ShippingAddress(BaseModel):
+    recipient_name: str = Field(min_length=2, max_length=100)
+    phone: str = Field(min_length=6, max_length=30)
+    address: str = Field(min_length=8, max_length=500)
+    city: str = Field(min_length=1, max_length=100)
+    province: str = Field(min_length=1, max_length=100)
+    postal_code: str | None = Field(default=None, max_length=12)
+
+    model_config = {"extra": "forbid"}
+
+
 class CheckoutRequest(BaseModel):
     items: list[dict[str, Any]] | None = Field(default=None, min_length=1, max_length=50)
-    shipping_address: dict[str, Any]
-    shipping_fee: Decimal = Field(default=Decimal("0"), ge=0, le=100000000)
+    shipping_address: ShippingAddress
 
 
 class PaymentEvidence(BaseModel):
@@ -165,8 +175,8 @@ async def checkout(
         raise HTTPException(status_code=422, detail="Keranjang masih kosong.")
     result = await order_rpc("checkout", None, {
         "items": normalized,
-        "shipping_address": request.shipping_address,
-        "shipping_fee": str(request.shipping_fee),
+        "shipping_address": request.shipping_address.model_dump(mode="json", exclude_none=True),
+        "shipping_fee": "0",
     }, idempotency_key, identity)
     return {"result": result}
 
