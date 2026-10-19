@@ -696,6 +696,10 @@ async def supabase_catalog_rpc(
                 raise HTTPException(status_code=404, detail="Data katalog tidak ditemukan atau sudah tidak tersedia.")
             if code == "42501":
                 raise HTTPException(status_code=403, detail="Aksi tidak diizinkan untuk role akun ini atau sesi tidak lagi aktif.")
+            # This production constraint is intentional: products with an unknown
+            # condition must remain drafts until a staff member verifies the condition.
+            if "products_condition_known_before_review" in message:
+                raise HTTPException(status_code=422, detail="Kondisi produk masih 'Belum diverifikasi'. Edit produk dan pilih kondisi yang benar-benar terkonfirmasi sebelum mengajukan review.")
             if message in safe_validation_messages:
                 raise HTTPException(status_code=422, detail=safe_validation_messages[message])
             if code == "23505":
