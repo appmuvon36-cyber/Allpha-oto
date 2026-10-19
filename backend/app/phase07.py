@@ -209,7 +209,7 @@ async def get_order(order_id: UUID, identity: dict[str, Any] = Depends(require_a
     order = rows[0]
     items = await supabase_get("oto_order_items", {"select": "id,product_id,sku_snapshot,name_snapshot,condition_snapshot,unit_price,quantity,line_total", "order_id": f"eq.{order_id}", "limit": "100"}, identity["_access_token"])
     payments = await supabase_get("oto_payment_events", {"select": "id,event_type,amount,method,provider_reference,status,review_note,reviewed_at,created_at", "order_id": f"eq.{order_id}", "order": "created_at.desc", "limit": "50"}, identity["_access_token"])
-    returns = await supabase_get("oto_returns", {"select": "id,status,reason,requested_refund,refund_provider_reference,review_note,created_at,updated_at", "order_id": f"eq.{order_id}", "limit": "10"}, identity["_access_token"])
+    returns = await supabase_get("oto_returns", {"select": "id,status,reason,requested_refund,refund_provider_reference,created_at,updated_at", "order_id": f"eq.{order_id}", "limit": "10"}, identity["_access_token"])
     return {"order": order, "items": items, "payments": payments, "returns": returns}
 
 
