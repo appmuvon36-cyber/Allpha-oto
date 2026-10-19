@@ -334,6 +334,23 @@ async def list_vehicle_variants(model_id: UUID = Query(...)) -> dict[str, Any]:
     return {"items": rows, "count": len(rows)}
 
 
+@app.get("/v1/catalog/products/{product_id}", tags=["catalog"])
+async def get_public_product(product_id: UUID) -> dict[str, Any]:
+    """Return one published product only; public reads continue to obey Supabase RLS."""
+    rows = await supabase_get(
+        "products",
+        {
+            "select": "id,sku,slug,name,description,brand,part_number,category,condition,condition_grade,package_quantity,warranty_days,currency,retail_price,fitment_summary,published_at",
+            "id": f"eq.{product_id}",
+            "status": "eq.published",
+            "limit": "1",
+        },
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Produk tidak ditemukan atau belum dipublikasikan.")
+    return {"product": rows[0]}
+
+
 @app.get("/v1/catalog/products/{product_id}/fitments", tags=["fitment"])
 async def list_verified_product_fitments(product_id: UUID) -> dict[str, Any]:
     """Only verified fitments attached to published products are visible under the existing RLS policy."""
