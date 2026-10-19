@@ -56,6 +56,14 @@ class Phase07ContractTests(unittest.TestCase):
                 },
             })
 
+    def test_checkout_does_not_allow_zero_shipping_fallback(self):
+        # Regression contract: checkout cannot silently create an order using
+        # shipping_fee=0 while the RajaOngkir quote integration is unavailable.
+        source = __import__("inspect").getsource(__import__("app.phase07", fromlist=["checkout"]).checkout)
+        self.assertIn("tarif kurir belum berhasil dikutip", source)
+        self.assertIn("status_code=503", source)
+        self.assertNotIn("shipping_fee", source.split("tarif kurir belum berhasil dikutip")[0].split("raise HTTPException")[-1])
+
     def test_inventory_mutation_requires_verified_bearer_identity(self):
         response = self.client.post(
             "/v1/admin/inventory/mutations",
