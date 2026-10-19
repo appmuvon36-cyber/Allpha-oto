@@ -182,7 +182,7 @@ async def supabase_get(
 
 async def supabase_rpc(function: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
     """Call an explicitly allowlisted public, read-only RPC using the anon key."""
-    if function != "oto_public_stock_status":
+    if function not in {"oto_public_stock_status", "oto_public_product_categories"}:
         raise HTTPException(status_code=422, detail="Unsupported public RPC.")
     supabase_url, anon_key = require_supabase_configuration()
     headers = {"apikey": anon_key, "Authorization": f"Bearer {anon_key}", "Content-Type": "application/json", "Accept": "application/json"}
@@ -924,7 +924,7 @@ class ProductCategoryUpdate(BaseModel):
 
 @app.get("/v1/catalog/categories", tags=["catalog"])
 async def list_public_product_categories() -> dict[str, Any]:
-    rows = await supabase_get("product_categories", {"select": "id,parent_id,name,slug,code,description,vehicle_scope,sort_order,is_active", "is_active": "eq.true", "order": "sort_order.asc,name.asc", "limit": "500"})
+    rows = await supabase_rpc("oto_public_product_categories", {})
     return {"items": rows, "count": len(rows)}
 
 
