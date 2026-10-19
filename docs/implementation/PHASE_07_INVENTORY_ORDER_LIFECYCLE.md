@@ -1,6 +1,6 @@
 # Phase 07 — Inventory & Order Lifecycle
 
-Status: implemented in the canonical source and additive migration applied to the existing Supabase project; CI and deployment gates are pending.
+Status: CLOSED FOR FEATURE PROGRESSION. Additive migrations are applied to the canonical Supabase project; CI transaction assertions and all three Railway deployments plus public smoke checks passed. Authenticated user-session/RLS/IDOR E2E remains Phase 12.
 
 ## Existing baseline and migration
 
@@ -59,7 +59,8 @@ All mutating endpoints require Idempotency-Key, an active authenticated profile 
 - backend/tests/phase07_db_assertions.sql: disposable PostgreSQL end-to-end transaction checks for receipt, checkout, idempotent replay, oversell rejection, payment review/verification, fulfillment, inspected return restock, refund record and audit.
 - .github/workflows/ci.yml applies Phase 07 migration only to the disposable CI database and runs the assertions.
 - Production migration was applied to the canonical Supabase project; current production data is not used as test fixtures.
-- Final closure still requires CI success, successful Railway deployment of API/Web/Admin, public HTTP smoke, and authenticated user/role/RLS/IDOR tests in Phase 12.
+- **Closure evidence:** CI [#39182061824](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39182061824) passed the disposable PostgreSQL Phase 07 transaction assertions and Web lint/typecheck/build; [contract/build #39182061912](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39182061912) passed API contracts and Web/Admin builds. Railway API `41bf5786-30d5-4f49-b8f2-48fc7d1aeab9`, Admin `e984b572-52be-497b-b377-c3db41b4c63b`, and Web `73ccca7c-9be3-4dc7-991f-870ed71b599b` are SUCCESS on commit `beb9cbc1648237e23a07449af175cd7209fb2ddd`. Public smoke: API health HTTP 200; protected cart/inventory/order/return routes HTTP 401 without a token; Web `/cart` HTTP 200; Admin `/inventory-orders` correctly redirects unauthenticated visitors to `/login`. Production transaction tables remain empty; no test rows were inserted.
+- **Still deferred:** authenticated production role/RLS/IDOR E2E and full session matrix remain Phase 12; a scheduled reservation-expiry job and payment/logistics provider execution remain operational/provider configuration work. Supabase Security Advisor still reports SECURITY DEFINER warnings for privileged RPC/helper functions; these are not represented as a zero-warning security audit.
 
 ## Known scope boundary
 
