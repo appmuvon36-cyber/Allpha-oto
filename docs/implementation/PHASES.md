@@ -75,10 +75,16 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 - Verified: [CI #39183795427](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39183795427) and [contract/build #39183795349](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39183795349) passed; API/Admin/Web Railway deployments succeeded on commit be99226a50bc9923c37396e660195acd642e7d23. Public API auth guards and Admin login guards passed smoke checks.
 - No mock production rows or invented KPI. Authenticated role changes are not executed against production without a dedicated approved test identity. Authenticated RLS/IDOR/session matrix remains Phase 12.
 
-## Phase 09 — Customer PWA (PARTIAL STOREFRONT EXISTS)
-- Mobile-first search, vehicle fitment, product detail, condition, warranty, cart, checkout, order tracking.
-- Cache app shell only; never publicly cache user orders or payment data.
-- Existing storefront is a real published-product listing/search baseline, not a completed checkout journey.
+## Phase 09 — Customer PWA (IMPLEMENTED IN SOURCE; CI/PRODUCTION VERIFICATION PENDING)
+- Added public `GET /v1/catalog/products/{product_id}`, restricted to published product records and returning not-found for unpublished/missing IDs.
+- Added customer product detail at `/products/{productId}`, including condition, SKU/part number, package quantity, warranty, IDR price, and verified-only fitment evidence. Unknown stock is not represented as available.
+- Storefront product cards link to detail; API base URL respects `NEXT_PUBLIC_API_BASE_URL`.
+- Added `/account` for existing-customer sign-in, active customer profile verification, order history, and sign-out; added `/orders/{orderId}` for item snapshots, totals, shipping/tracking, payment reference review, permitted cancellation, and return request flow.
+- Existing cart and checkout UI reuses Phase 07 customer APIs; all writes still go through FastAPI and the existing transactional RPC/idempotency guards.
+- Service worker cache version advanced and excludes private `/account`, `/cart`, `/checkout`, `/login`, `/orders`, and `/supplier` navigations from cache. It caches only the app shell and same-origin static assets.
+- No schema migration or production data mutation was required. No mock products, stock, prices, users, or orders were added.
+- Focused API tests cover published detail, missing/unpublished detail, and invalid UUID. Authenticated RLS/IDOR/session E2E remains Phase 12.
+- Implementation record: [PHASE_09_CUSTOMER_PWA.md](./PHASE_09_CUSTOMER_PWA.md).
 
 ## Phase 10 — AI and search (NOT IMPLEMENTED)
 - Part number normalization, evidence-backed candidate search, confidence/uncertainty.
