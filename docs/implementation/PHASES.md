@@ -67,13 +67,13 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 - Railway API/Admin/Web deployments succeeded on commit beb9cbc1648237e23a07449af175cd7209fb2ddd. Public smoke verified API health 200, protected endpoints 401 without bearer token, Web /cart 200, and Admin /inventory-orders redirect to /login for unauthenticated access. Production transaction tables remain empty; no production test data was inserted.
 - Deferred gates: authenticated user-session/RLS/IDOR E2E remains Phase 12. A scheduled reservation-expiry job and actual payment/logistics provider execution are not claimed as configured. Supabase Security Advisor still reports SECURITY DEFINER warnings for privileged RPC/helper functions; no zero-warning security audit is claimed.
 
-## Phase 08 — Super Admin (IMPLEMENTED IN SOURCE; CI/DEPLOYMENT GATES PENDING)
+## Phase 08 — Super Admin (CLOSED FOR FEATURE PROGRESSION; CI + PRODUCTION SMOKE VERIFIED)
 - See [Phase 08 implementation record](./PHASE_08_SUPER_ADMIN.md). Dashboard reads role-scoped metrics from FastAPI rather than querying protected tables directly from the browser; unavailable domains are null, not fake zero.
 - Dashboard consolidates catalog/fitment review, supplier/offer/document review, inventory, open orders, payment review, returns/refunds, audit, and role-scoped navigation.
 - Admin-only user/profile list and role/active-state controls use FastAPI and additive RPC oto_admin_set_user_role; mutation is idempotent, prevents self-change and last-active-admin removal, and atomically records audit.
 - Admin-only audit explorer has safe metadata filters and bounded pagination; free-form details payload is not exposed.
-- No mock production rows or invented KPI. Authenticated role changes are not executed against production without a dedicated approved test identity.
-- Phase 08 remains OPEN until CI, all three Railway deployments, and public unauthenticated smoke checks are verified. Authenticated RLS/IDOR/session matrix remains Phase 12.
+- Verified: [CI #39183795427](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39183795427) and [contract/build #39183795349](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39183795349) passed; API/Admin/Web Railway deployments succeeded on commit be99226a50bc9923c37396e660195acd642e7d23. Public API auth guards and Admin login guards passed smoke checks.
+- No mock production rows or invented KPI. Authenticated role changes are not executed against production without a dedicated approved test identity. Authenticated RLS/IDOR/session matrix remains Phase 12.
 
 ## Phase 09 — Customer PWA (PARTIAL STOREFRONT EXISTS)
 - Mobile-first search, vehicle fitment, product detail, condition, warranty, cart, checkout, order tracking.
@@ -97,7 +97,7 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 1. Phase 05 catalog lifecycle and fitment review APIs closed with verified CI and Admin smoke evidence; full active-user E2E remains Phase 12.
 2. Phase 06 supplier onboarding, private document verification, sourcing offers, exact candidate matching, deduplication, and audit are closed for feature progression; authenticated session/upload E2E remains Phase 12.
 3. Phase 07 inventory ledger mutations, order lifecycle, payment review, fulfillment, returns/refunds and expiry-release operation are closed for feature progression; authenticated session E2E remains Phase 12.
-4. Complete Phase 08 Super Admin release gates: verify CI, deploy API/Admin/Web, run public smoke and retain Phase 12 for authenticated role/RLS/IDOR E2E.
+4. Phase 08 Super Admin Control Plane is closed for feature progression; authenticated role/RLS/IDOR E2E remains Phase 12.
 5. Complete Phase 09 customer vehicle selection, product detail, cart, checkout and tracking.
 6. Add Phase 10 evidence-based AI/search.
 7. Add Phase 11 provider integrations only when the real provider and credentials are configured.
