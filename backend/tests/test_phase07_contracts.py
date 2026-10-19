@@ -51,6 +51,15 @@ class Phase07ContractTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 401)
 
+    def test_checkout_quote_is_optional_in_schema_but_server_required(self):
+        request = CheckoutRequest.model_validate({
+            "shipping_address": {
+                "recipient_name": "Test User", "phone": "081234567890",
+                "address": "Jalan Test 123", "city": "Bogor", "province": "Jawa Barat",
+            }
+        })
+        self.assertIsNone(request.shipping_quote)
+
     def test_checkout_rejects_client_supplied_cart_items(self):
         with self.assertRaises(ValidationError):
             CheckoutRequest.model_validate({
