@@ -180,28 +180,54 @@ async def supabase_get(
 
 
 
+async def supabase_rpc(function: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Call an explicitly allowlisted public, read-only RPC using the anon key."""
+    if function != "oto_public_stock_status":
+        raise HTTPException(status_code=422, detail="Unsupported public RPC.")
+    supabase_url, anon_key = require_supabase_configuration()
+    headers = {"apikey": anon_key, "Authorization": f"Bearer {anon_key}", "Content-Type": "application/json", "Accept": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.post(f"{supabase_url}/rest/v1/rpc/{function}", headers=headers, json=payload)
+        if response.status_code == 429 or response.status_code >= 500:
+            raise HTTPException(status_code=503, detail="Public catalog availability is temporarily unavailable.")
+        if response.status_code != 200:
+            raise HTTPException(status_code=503, detail="Public catalog availability could not be read.")
+        data = response.json()
+        if not isinstance(data, list):
+            raise HTTPException(status_code=503, detail="Public catalog availability returned an invalid response.")
+        return data
+    except HTTPException:
+        raise
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail="Public catalog availability request timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Could not reach public catalog availability.") from exc
+
+
 async def supabase_write(method: str, table: str, access_token: str, payload: dict[str, Any], filters: dict[str, str] | None = None) -> list[dict[str, Any]]:
-    """Write a small allowlisted payload through PostgREST with the caller JWT; RLS remains authoritative."""
-    if method not in {"POST", "PATCH"} or table not in {"product_categories", "product_media"}:
+    """Write allowlisted payloads through PostgREST with the caller JWT; RLS remains authoritative."""
+    if method not in {"POST", "PATCH"} or table not in {"product_categories", "product_media", "sourcing_requests"}:
         raise HTTPException(status_code=422, detail="Unsupported data mutation.")
     supabase_url, anon_key = require_supabase_configuration()
     headers = {"apikey": anon_key, "Authorization": f"Bearer {access_token}", "Content-Type": "application/json", "Accept": "application/json", "Prefer": "return=representation"}
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.request(method, f"{supabase_url}/rest/v1/{table}", params=filters or {}, headers=headers, json=payload)
-        if response.status_code in (401, 403): raise HTTPException(status_code=403, detail="Category mutation is not permitted.")
-        if response.status_code == 409: raise HTTPException(status_code=409, detail="Category name, slug, or code already exists.")
-        if response.status_code == 429 or response.status_code >= 500: raise HTTPException(status_code=503, detail="Category service is temporarily unavailable.")
+        if response.status_code in (401, 403): raise HTTPException(status_code=403, detail="This data mutation is not permitted.")
+        if response.status_code == 409: raise HTTPException(status_code=409, detail="A request with this key already exists.")
+        if response.status_code == 429 or response.status_code >= 500: raise HTTPException(status_code=503, detail="Data service is temporarily unavailable.")
         if response.status_code not in (200, 201, 204):
             try: code = str(response.json().get("code", ""))
             except (ValueError, AttributeError): code = ""
-            if code in {"23505", "23514", "23502", "22P02"}: raise HTTPException(status_code=422, detail="Category data failed validation.")
-            raise HTTPException(status_code=503, detail="Category mutation could not be completed.")
+            if code in {"23505"}: raise HTTPException(status_code=409, detail="A request with this key or unique value already exists.")
+            if code in {"23514", "23502", "22P02"}: raise HTTPException(status_code=422, detail="Submitted data failed validation.")
+            raise HTTPException(status_code=503, detail="Data mutation could not be completed.")
         data = response.json() if response.content else []
         return data if isinstance(data, list) else []
     except HTTPException: raise
-    except httpx.TimeoutException as exc: raise HTTPException(status_code=503, detail="Category request timed out.") from exc
-    except httpx.HTTPError as exc: raise HTTPException(status_code=503, detail="Could not reach category service.") from exc
+    except httpx.TimeoutException as exc: raise HTTPException(status_code=503, detail="Data request timed out.") from exc
+    except httpx.HTTPError as exc: raise HTTPException(status_code=503, detail="Could not reach data service.") from exc
 
 
 async def supabase_count(
@@ -315,17 +341,75 @@ async def public_product_media(product_ids: list[str]) -> dict[str, list[dict[st
     return grouped
 
 
+class SourcingRequestCreate(BaseModel):
+    part_name: str = Field(min_length=2, max_length=180)
+    part_number: str | None = Field(default=None, max_length=120)
+    vehicle_make: str | None = Field(default=None, max_length=100)
+    vehicle_model: str | None = Field(default=None, max_length=120)
+    vehicle_year: int | None = Field(default=None, ge=1950, le=2100)
+    quantity: int = Field(default=1, ge=1, le=100)
+    details: str | None = Field(default=None, max_length=2000)
+    contact_phone: str | None = Field(default=None, max_length=40)
+    model_config = {"extra": "forbid"}
+
+
+@app.get("/v1/sourcing/requests", tags=["sourcing"])
+async def list_own_sourcing_requests(identity: dict[str, Any] = Depends(require_roles("customer"))) -> dict[str, Any]:
+    user_id = (identity.get("user") or {}).get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Verified customer identity required.")
+    rows = await supabase_get(
+        "sourcing_requests",
+        {"select": "id,part_name,part_number,vehicle_make,vehicle_model,vehicle_year,quantity,details,status,created_at", "customer_user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "100"},
+        access_token=identity["_access_token"],
+    )
+    return {"items": rows, "count": len(rows)}
+
+
+@app.post("/v1/sourcing/requests", tags=["sourcing"], status_code=201)
+async def create_sourcing_request(
+    request: SourcingRequestCreate = Body(...),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    identity: dict[str, Any] = Depends(require_roles("customer")),
+) -> dict[str, Any]:
+    user_id = (identity.get("user") or {}).get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Verified customer identity required.")
+    if not idempotency_key or len(idempotency_key.strip()) < 8 or len(idempotency_key) > 128:
+        raise HTTPException(status_code=422, detail="A valid Idempotency-Key header is required.")
+    payload = request.model_dump(mode="json", exclude_none=True)
+    payload.update({"customer_user_id": user_id, "idempotency_key": idempotency_key.strip(), "status": "requested"})
+    try:
+        rows = await supabase_write("POST", "sourcing_requests", identity["_access_token"], payload)
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        existing = await supabase_get(
+            "sourcing_requests",
+            {"select": "id,part_name,part_number,vehicle_make,vehicle_model,vehicle_year,quantity,details,status,created_at", "customer_user_id": f"eq.{user_id}", "idempotency_key": f"eq.{idempotency_key.strip()}", "limit": "1"},
+            access_token=identity["_access_token"],
+        )
+        if existing:
+            return {"request": existing[0], "replayed": True}
+        raise
+    if not rows:
+        raise HTTPException(status_code=503, detail="Sourcing request was not returned after save.")
+    row = rows[0]
+    return {"request": {key: row.get(key) for key in ("id","part_name","part_number","vehicle_make","vehicle_model","vehicle_year","quantity","details","status","created_at")}, "replayed": False}
+
+
 @app.get("/v1/catalog/products", tags=["catalog"])
 async def list_public_products(
     q: str | None = Query(default=None, min_length=1, max_length=100),
     category: str | None = Query(default=None, min_length=1, max_length=80),
+    category_id: UUID | None = None,
     condition: str | None = Query(default=None, min_length=1, max_length=40),
     part_number: str | None = Query(default=None, min_length=1, max_length=100),
     variant_id: UUID | None = None,
     limit: int = Query(default=24, ge=1, le=100),
     offset: int = Query(default=0, ge=0, le=10000),
 ) -> dict[str, Any]:
-    """Public catalog search. Supabase RLS limits results to published products."""
+    """Public catalog search with descendant-aware categories and published-only stock summaries."""
     params = {
         "select": "id,sku,slug,name,description,brand,part_number,category,condition,condition_grade,package_quantity,warranty_days,currency,retail_price,fitment_summary,published_at",
         "status": "eq.published",
@@ -333,10 +417,29 @@ async def list_public_products(
         "limit": str(limit),
         "offset": str(offset),
     }
-    if category:
+    category_clauses: list[str] = []
+    if category_id:
+        category_rows = await supabase_get("product_categories", {"select": "id,parent_id,name", "is_active": "eq.true", "order": "sort_order.asc,name.asc", "limit": "500"})
+        category_by_id = {str(item["id"]): item for item in category_rows}
+        if str(category_id) not in category_by_id:
+            raise HTTPException(status_code=404, detail="Kategori tidak ditemukan atau tidak aktif.")
+        descendant_ids = {str(category_id)}
+        changed = True
+        while changed:
+            changed = False
+            for item in category_rows:
+                if item.get("parent_id") and str(item["parent_id"]) in descendant_ids and str(item["id"]) not in descendant_ids:
+                    descendant_ids.add(str(item["id"]))
+                    changed = True
+        for item in category_rows:
+            if str(item["id"]) in descendant_ids:
+                term = safe_search_term(str(item["name"]))
+                if term:
+                    category_clauses.append(f"category.ilike.*{term}*")
+    elif category:
         term = safe_search_term(category)
         if term:
-            params["category"] = f"ilike.*{term}*"
+            category_clauses.append(f"category.ilike.*{term}*")
     if condition:
         normalized = condition.strip().lower()
         if normalized not in PRODUCT_CONDITIONS:
@@ -346,10 +449,17 @@ async def list_public_products(
         term = safe_search_term(part_number)
         if term:
             params["part_number"] = f"ilike.*{term}*"
+    query_clauses: list[str] = []
     if q:
         term = safe_search_term(q)
         if term:
-            params["or"] = f"(name.ilike.*{term}*,sku.ilike.*{term}*,brand.ilike.*{term}*,part_number.ilike.*{term}*)"
+            query_clauses.extend([f"name.ilike.*{term}*", f"sku.ilike.*{term}*", f"brand.ilike.*{term}*", f"part_number.ilike.*{term}*"])
+    if category_clauses and query_clauses:
+        params["and"] = f"(or({','.join(category_clauses)}),or({','.join(query_clauses)}))"
+    elif category_clauses:
+        params["or"] = f"({','.join(category_clauses)})"
+    elif query_clauses:
+        params["or"] = f"({','.join(query_clauses)})"
     if variant_id:
         fitment_rows = await supabase_get(
             "product_fitments",
@@ -360,10 +470,20 @@ async def list_public_products(
             return {"items": [], "count": 0, "limit": limit, "offset": offset}
         params["id"] = f"in.({','.join(product_ids)})"
     rows = await supabase_get("products", params)
-    media = await public_product_media([str(row["id"]) for row in rows if row.get("id")])
+    ids = [str(row["id"]) for row in rows if row.get("id")]
+    media = await public_product_media(ids)
+    stock: dict[str, dict[str, Any]] = {}
+    if ids:
+        try:
+            stock_rows = await supabase_rpc("oto_public_stock_status", {"p_product_ids": ids})
+            stock = {str(item["product_id"]): {"stock_status": item["stock_status"], "stock_checked_at": item.get("checked_at")} for item in stock_rows if item.get("product_id")}
+        except HTTPException:
+            stock = {}
     for row in rows:
         row["images"] = media.get(str(row["id"]), [])
         row["image_url"] = next((item["url"] for item in row["images"] if item["is_primary"]), row["images"][0]["url"] if row["images"] else None)
+        row["stock_status"] = stock.get(str(row["id"]), {}).get("stock_status", "unverified")
+        row["stock_checked_at"] = stock.get(str(row["id"]), {}).get("stock_checked_at")
     return {"items": rows, "count": len(rows), "limit": limit, "offset": offset}
 
 
@@ -422,9 +542,17 @@ async def get_public_product(product_id: UUID) -> dict[str, Any]:
     )
     if not rows:
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan atau belum dipublikasikan.")
-    media = await public_product_media([str(rows[0]["id"])])
-    rows[0]["images"] = media.get(str(rows[0]["id"]), [])
+    product_id = str(rows[0]["id"])
+    media = await public_product_media([product_id])
+    rows[0]["images"] = media.get(product_id, [])
     rows[0]["image_url"] = next((item["url"] for item in rows[0]["images"] if item["is_primary"]), rows[0]["images"][0]["url"] if rows[0]["images"] else None)
+    try:
+        stock_rows = await supabase_rpc("oto_public_stock_status", {"p_product_ids": [product_id]})
+        stock_row = stock_rows[0] if stock_rows else None
+    except HTTPException:
+        stock_row = None
+    rows[0]["stock_status"] = stock_row.get("stock_status", "unverified") if stock_row else "unverified"
+    rows[0]["stock_checked_at"] = stock_row.get("checked_at") if stock_row else None
     return {"product": rows[0]}
 
 
