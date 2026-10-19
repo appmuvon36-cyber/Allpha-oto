@@ -41,6 +41,10 @@ export default function CatalogPage(){
  async function advanceLifecycle(product:Product){
   const nextAction=product.status==="draft"?"submit_review":product.status==="review"?"approve_product":product.status==="approved"?"publish_product":null;
   if(!nextAction)return;
+  if(nextAction==="submit_review"&&product.condition==="unknown"){
+   setLifecycleMessage({productId:product.id,kind:"error",text:"Kondisi produk masih “Belum diverifikasi”. Edit produk dan pilih kondisi yang benar-benar terkonfirmasi sebelum mengajukan review."});
+   return;
+  }
   const labels:Record<string,string>={submit_review:"mengirim produk ke review",approve_product:"menyetujui produk",publish_product:"mempublikasikan produk"};
   if(nextAction==="publish_product"&&!window.confirm("Publikasikan produk ini ke Customer Web? Backend akan tetap menerapkan seluruh aturan katalog."))return;
   setLifecycleBusyId(product.id);setLifecycleMessage(null);
