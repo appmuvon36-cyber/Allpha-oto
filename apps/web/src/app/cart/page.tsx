@@ -99,7 +99,6 @@ export default function CartPage(){
   try{
    const body=await request("/v1/checkout",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({
     shipping_address:{recipient_name:recipient.trim(),phone:phone.trim(),address:address.trim(),city:city.trim(),province:province.trim(),postal_code:postalCode.trim()},
-    shipping_fee:0,
    })});
    const order=body.result?.order as Order|undefined;
    if(!order)throw new Error("Pesanan belum dapat dikonfirmasi oleh server.");
