@@ -37,8 +37,11 @@ class ShippingAddress(BaseModel):
 
 
 class CheckoutRequest(BaseModel):
-    items: list[dict[str, Any]] | None = Field(default=None, min_length=1, max_length=50)
+    # Cart contents are read from the authenticated customer's persisted cart.
+    # Client-supplied items/prices are deliberately rejected.
     shipping_address: ShippingAddress
+
+    model_config = {"extra": "forbid"}
 
 
 class PaymentEvidence(BaseModel):
@@ -158,19 +161,30 @@ async def checkout(
 ) -> dict[str, Any]:
     if identity.get("role") != "customer":
         raise HTTPException(status_code=403, detail="Checkout requires a customer account.")
-    items = request.items
-    if items is None:
-        carts = await supabase_get("shopping_carts", {"select": "id", "customer_user_id": f"eq.{identity['user']['id']}", "limit": "1"}, identity["_access_token"])
-        if not carts:
-            raise HTTPException(status_code=422, detail="Keranjang masih kosong.")
-        cart_rows = await supabase_get("shopping_cart_items", {"select": "product_id,quantity", "cart_id": f"eq.{carts[0]['id']}", "limit": "50"}, identity["_access_token"])
-        items = cart_rows
+    carts = await supabase_get(
+        "shopping_carts",
+        {"select": "id", "customer_user_id": f"eq.{identity['user']['id']}", "limit": "1"},
+        identity["_access_token"],
+    )
+    if not carts:
+        raise HTTPException(status_code=422, detail="Keranjang masih kosong.")
+    cart_rows = await supabase_get(
+        "shopping_cart_items",
+        {"select": "product_id,quantity", "cart_id": f"eq.{carts[0]['id']}", "limit": "50"},
+        identity["_access_token"],
+    )
     normalized: list[dict[str, Any]] = []
-    for item in items:
+    seen_product_ids: set[str] = set()
+    for item in cart_rows:
         try:
-            normalized.append({"product_id": str(UUID(str(item["product_id"]))), "quantity": int(item["quantity"])})
+            product_id = str(UUID(str(item["product_id"])))
+            quantity = int(item["quantity"])
         except (KeyError, ValueError, TypeError):
-            raise HTTPException(status_code=422, detail="Item checkout tidak valid.")
+            raise HTTPException(status_code=422, detail="Item keranjang tidak valid.")
+        if product_id in seen_product_ids or quantity < 1 or quantity > 100:
+            raise HTTPException(status_code=422, detail="Item keranjang duplikat atau jumlahnya tidak valid.")
+        seen_product_ids.add(product_id)
+        normalized.append({"product_id": product_id, "quantity": quantity})
     if not normalized:
         raise HTTPException(status_code=422, detail="Keranjang masih kosong.")
     result = await order_rpc("checkout", None, {
