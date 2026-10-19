@@ -419,7 +419,7 @@ async def list_public_products(
     }
     category_clauses: list[str] = []
     if category_id:
-        category_rows = await supabase_get("product_categories", {"select": "id,parent_id,name", "is_active": "eq.true", "order": "sort_order.asc,name.asc", "limit": "500"})
+        category_rows = await supabase_rpc("oto_public_product_categories", {})
         category_by_id = {str(item["id"]): item for item in category_rows}
         if str(category_id) not in category_by_id:
             raise HTTPException(status_code=404, detail="Kategori tidak ditemukan atau tidak aktif.")
