@@ -54,8 +54,7 @@ function validateRows(text:string):CheckedRow[]{
 }
 function csvCell(value:string){return /[",\n\r]/.test(value)?'"'+value.replace(/"/g,'""')+'"':value;}
 function downloadTemplate(){
- const sample=[HEADERS.join(","),["OTO-SAMPLE-001","kampas-rem-depan-oto-sample-001","Kampas rem depan — GANTI DENGAN NAMA PRODUK NYATA","Deskripsi berdasarkan sumber resmi","Merek terverifikasi","NOMOR-PART-RESMI","Sistem pengereman","new_aftermarket","", "1","0","0","250","URL katalog resmi atau referensi invoice yang benar","", "", "", "0",""].map(csvCell).join(",")].join("\r\n");
- const blob=new Blob(["\uFEFF"+sample],{type:"text/csv;charset=utf-8;"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="otoclinic-product-import-template.csv";a.click();URL.revokeObjectURL(url);
+ const blob=new Blob(["\\uFEFF"+HEADERS.join(",")+"\\r\\n"],{type:"text/csv;charset=utf-8;"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="otoclinic-product-import-template.csv";a.click();URL.revokeObjectURL(url);
 }
 
 export default function CatalogImportPage(){
