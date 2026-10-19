@@ -944,9 +944,9 @@ def validate_marketplace_image_url(value: str, *, listing: bool = False) -> str:
 
 def extract_marketplace_image_url(page_html: str) -> str | None:
     """Extract only an explicitly declared Open Graph/Twitter image from marketplace HTML."""
-    for tag in re.findall(r"<meta\\b[^>]*>", page_html, flags=re.IGNORECASE):
-        name_match = re.search(r"""(?:property|name)\\s*=\\s*["']([^"']+)["']""", tag, flags=re.IGNORECASE)
-        content_match = re.search(r"""\\bcontent\\s*=\\s*["']([^"']+)["']""", tag, flags=re.IGNORECASE)
+    for tag in re.findall(r"<meta\b[^>]*>", page_html, flags=re.IGNORECASE):
+        name_match = re.search(r"""(?:property|name)\s*=\s*["']([^"']+)["']""", tag, flags=re.IGNORECASE)
+        content_match = re.search(r"""\bcontent\s*=\s*["']([^"']+)["']""", tag, flags=re.IGNORECASE)
         if not name_match or not content_match or name_match.group(1).strip().lower() not in {"og:image", "twitter:image"}:
             continue
         candidate = html_unescape(content_match.group(1).strip())
