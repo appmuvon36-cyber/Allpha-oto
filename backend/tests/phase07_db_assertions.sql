@@ -73,6 +73,17 @@ begin
   end if;
   if not exists(select 1 from public.inventory_ledger where reference_type='return' and reference_id=return_id and movement='return') then raise exception 'phase07 return restock ledger event missing'; end if;
 
+  -- Cancelling an order in payment review must clear the pending payment queue in the same transaction.
+  perform set_config('request.jwt.claim.sub',customer_id::text,true);
+  result:=public.oto_order_mutate('checkout',null,jsonb_set(checkout_payload,'{items,0,quantity}','1'::jsonb),'phase07-checkout-cancel-01');
+  order_id:=(result#>>'{order,id}')::uuid;
+  result:=public.oto_order_mutate('submit_payment_evidence',order_id,'{"amount":"1000","method":"manual_transfer","evidence_reference":"ci-cancel-proof"}'::jsonb,'phase07-payment-cancel-submit');
+  payment_id:=(result#>>'{payment,id}')::uuid;
+  result:=public.oto_order_mutate('cancel_order',order_id,'{}'::jsonb,'phase07-payment-cancel-order');
+  if result#>>'{order,status}'<>'cancelled' or (select pe.status from public.oto_payment_events pe where pe.id=payment_id)<>'rejected' then
+    raise exception 'phase07 cancellation did not close pending payment review';
+  end if;
+
   -- Reservation expiry must cancel unpaid orders and release reserved stock atomically.
   perform set_config('request.jwt.claim.sub',customer_id::text,true);
   result:=public.oto_order_mutate('checkout',null,jsonb_set(checkout_payload,'{items,0,quantity}','2'::jsonb),'phase07-checkout-expiry-01');
