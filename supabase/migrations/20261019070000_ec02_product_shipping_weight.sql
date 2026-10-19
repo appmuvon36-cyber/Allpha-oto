@@ -20,7 +20,7 @@ declare
 begin
   if actor is null then raise exception using errcode='42501', message='authentication_required'; end if;
   select role,is_active into actor_role,active from public.user_profiles where id=actor;
-  if not found or active is distinct from true or actor_role not in ('admin'::public.oto_user_role,'catalog_editor'::public.oto_user_role) then
+  if not found or active is distinct from true or actor_role not in ('admin'::public.oto_user_role,'catalog_editor'::public.oto_user_role,'moderator'::public.oto_user_role) then
     raise exception using errcode='42501', message='catalog_role_required';
   end if;
   if p_product_id is null or p_weight_grams is null or p_weight_grams < 1 or p_weight_grams > 1000000 then
