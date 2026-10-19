@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import Callable
 from datetime import datetime, timezone
 from decimal import Decimal
+from html import unescape as html_unescape
 import hashlib
 import re
 from typing import Any
@@ -941,6 +942,36 @@ def validate_marketplace_image_url(value: str, *, listing: bool = False) -> str:
     return value
 
 
+def extract_marketplace_image_url(page_html: str) -> str | None:
+    """Extract only an explicitly declared Open Graph/Twitter image from marketplace HTML."""
+    for tag in re.findall(r"<meta\\b[^>]*>", page_html, flags=re.IGNORECASE):
+        name_match = re.search(r"""(?:property|name)\\s*=\\s*["']([^"']+)["']""", tag, flags=re.IGNORECASE)
+        content_match = re.search(r"""\\bcontent\\s*=\\s*["']([^"']+)["']""", tag, flags=re.IGNORECASE)
+        if not name_match or not content_match or name_match.group(1).strip().lower() not in {"og:image", "twitter:image"}:
+            continue
+        candidate = html_unescape(content_match.group(1).strip())
+        try:
+            return validate_marketplace_image_url(candidate)
+        except HTTPException:
+            continue
+    return None
+
+
+async def refresh_marketplace_image_url(listing_url: str) -> str | None:
+    """Refresh expiring marketplace CDN image URLs from the public listing metadata."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            response = await client.get(
+                listing_url,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; OtoClinicCatalogBot/1.0)", "Accept-Language": "id-ID,id;q=0.9,en;q=0.8"},
+            )
+        if response.status_code != 200:
+            return None
+        return extract_marketplace_image_url(response.text)
+    except (httpx.HTTPError, HTTPException):
+        return None
+
+
 def detect_product_image_type(content: bytes) -> str | None:
     if content.startswith(b"\xff\xd8\xff"):
         return "image/jpeg"
@@ -966,6 +997,9 @@ async def import_marketplace_product_media(
         raise HTTPException(status_code=401, detail="Authenticated user required.")
     image_url = validate_marketplace_image_url(request.image_url)
     listing_url = validate_marketplace_image_url(request.source_listing_url, listing=True)
+    refreshed_image_url = await refresh_marketplace_image_url(listing_url)
+    if refreshed_image_url:
+        image_url = refreshed_image_url
     product_rows = await supabase_get("products", {"select": "id,status", "id": f"eq.{product_id}", "limit": "1"}, access_token=identity["_access_token"])
     if not product_rows:
         raise HTTPException(status_code=404, detail="Product was not found.")
