@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     )
     supabase_url: str = ""
     supabase_anon_key: str = ""
+    # RajaOngkir shipping-cost integration. API key and origin ID remain unset
+    # until the owner adds a real key and resolves the warehouse destination ID.
+    rajaongkir_api_key: str = ""
+    rajaongkir_base_url: str = "https://rajaongkir.komerce.id/api/v1"
+    rajaongkir_origin_address: str = ""
+    rajaongkir_origin_search: str = ""
+    rajaongkir_origin_id: str = ""
+    rajaongkir_default_couriers: str = "jne:jnt:sicepat:ide:sap:ninja:tiki:lion:anteraja:pos"
+    rajaongkir_quote_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
