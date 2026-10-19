@@ -99,3 +99,15 @@ Start with EC-01/EC-02 gap analysis and customer/admin workflow mapping; then im
 3. Publish at least one legitimately reviewed product with approved media, condition, warranty, part number, verified fitment evidence, and authoritative inventory; then repeat read-only product detail and stock-state QA. Until that data exists, these product-state acceptance criteria remain blocked by empty production data.
 4. Extend the browser QA to validate search/filter response and keyboard/navigation states, and capture the product-detail route after a real product is available.
 5. Mark EC-01 closed only when the remaining data-dependent and authenticated acceptance checks have evidence. Then proceed to EC-02 (cart and checkout); keep Phase 10 AI deferred.
+
+
+## 11. EC-02 implementation log — 19 October 2026
+
+**State: implementation started; no real customer transaction or production checkout was executed.**
+
+- Checkout now derives its item list exclusively from the authenticated customer's persisted `shopping_carts` and `shopping_cart_items` records. Client-supplied `items` are rejected by request validation, so a caller cannot substitute arbitrary product IDs or quantities through the checkout body.
+- The API normalizes the persisted cart item IDs and quantities and rejects duplicate IDs or invalid quantity bounds before calling the existing transactional `oto_order_mutate` RPC. The RPC remains responsible for canonical price/stock revalidation, order-item snapshots, inventory reservation, cart clearing, idempotency, and audit writes.
+- Added a contract test for rejecting client-supplied checkout items and updated the unauthenticated checkout contract to use the supported request shape.
+- No schema migration was needed for this change. Existing tables, RLS, the transactional RPC and production data were preserved.
+- No real checkout, payment, inventory mutation, or test order was executed. CI evidence must be recorded only after the workflow for the resulting commit completes.
+- Known remaining EC-02 scope: a real shipping quote/policy and coupon rules are not configured. The UI must not imply that `Rp0` is a carrier quote; checkout should remain explicit that the displayed total excludes an authoritative shipping quote. Guest-to-authenticated cart merge is also not implemented yet.
