@@ -96,6 +96,16 @@ test.describe("OtoClinic public production UI QA", () => {
     }
   });
 
+  test("catalog loading skeleton appears before empty-state response", async ({ page }) => {
+    await page.route(`${API}/v1/catalog/products**`, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      await route.continue();
+    });
+    await page.goto(WEB, { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#katalog .animate-pulse").first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole("heading", { name: /belum ada produk yang dipublikasikan/i })).toBeVisible({ timeout: 15000 });
+  });
+
   test("catalog error state is rendered when API fails", async ({ page }) => {
     await page.route(`${API}/v1/catalog/products**`, (route) =>
       route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "QA injected service-unavailable response" }) })
