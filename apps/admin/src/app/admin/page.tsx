@@ -35,7 +35,6 @@ export default function AdminPage() {
   const [email, setEmail] = useState("");
   const [overview, setOverview] = useState<Overview | null>(null);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
