@@ -924,9 +924,9 @@ class MarketplaceProductMediaImport(BaseModel):
 
 
 def validate_marketplace_image_url(value: str, *, listing: bool = False) -> str:
-    parsed = urlsplit(value)
-    host = (parsed.hostname or "").lower().rstrip(".")
     try:
+        parsed = urlsplit(value)
+        host = (parsed.hostname or "").lower().rstrip(".")
         port = parsed.port
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Marketplace source must be a valid HTTPS URL.") from exc
