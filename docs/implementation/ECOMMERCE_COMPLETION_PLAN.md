@@ -111,3 +111,15 @@ Start with EC-01/EC-02 gap analysis and customer/admin workflow mapping; then im
 - No schema migration was needed for this change. Existing tables, RLS, the transactional RPC and production data were preserved.
 - No real checkout, payment, inventory mutation, or test order was executed. CI evidence must be recorded only after the workflow for the resulting commit completes.
 - Known remaining EC-02 scope: a real shipping quote/policy and coupon rules are not configured. The UI must not imply that `Rp0` is a carrier quote; checkout should remain explicit that the displayed total excludes an authoritative shipping quote. Guest-to-authenticated cart merge is also not implemented yet.
+
+
+## 11. EC-02 implementation log — RajaOngkir shipping safety — 19 October 2026
+
+**State: checkout is fail-closed pending a real server-calculated carrier quote. No production order, payment, or real transaction was created.**
+
+- CI run for commit `42f9d6e3cc674bc9341bc961963c2966d3127a8b` completed successfully: [OtoClinic CI](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39211874470).
+- RajaOngkir official API V2 documentation identifies the domestic-cost endpoint `https://rajaongkir.komerce.id/api/v1/calculate/domestic-cost`; requests require a server-side API key, origin/destination IDs, weight in grams, and courier. The live quote must be generated for the actual destination and parcel; published example prices are not a valid substitute.
+- Current checkout previously sent `shipping_fee: "0"` into the transactional RPC. That is not safe because it can produce a payable order whose total omits delivery charges. Checkout now returns HTTP 503 before reading/mutating the cart or calling the order RPC until a server-validated RajaOngkir quote is implemented and bound to the order.
+- No coupon is accepted or applied without an authoritative server-side promotion rule. Existing database transaction RPC remains the owner of item price snapshots, stock reservations, idempotency and payment evidence states.
+- Remaining integration prerequisites: confirm server-side `RAJAONGKIR_API_KEY`, configured warehouse/origin destination ID, canonical customer destination ID mapping, authoritative product package weights, allowed courier/service policy, quote expiry/revalidation, and persistence of the selected quote in the order transaction. Do not add these secrets to the web app or commit them.
+- No database migration or live Supabase write was performed in this change. Railway still points to earlier EC-01 commits at the time of inspection; EC-02 is not yet deployed.
