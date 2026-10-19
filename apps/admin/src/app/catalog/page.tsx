@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ClipboardCheck, ExternalLink, Filter, PackageSearch, RefreshCw, Search, ShieldAlert, Wrench } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, ExternalLink, Filter, ImagePlus, PackageSearch, RefreshCw, Search, ShieldAlert, Upload, Wrench } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 type Product = { id:string; sku:string|null; slug:string; name:string; description:string|null; brand:string|null; part_number:string|null; category:string|null; condition:string; condition_grade:string|null; warranty_days:number; status:string; retail_price:number|null; created_at:string; };
 type Fitment = { id:string; status:string; evidence_url:string|null; evidence_note:string|null; verified_at:string|null; variant_id:string; vehicle_variants?:{name:string;year_start:number|null;year_end:number|null;vehicle_models?:{name:string;vehicle_makes?:{name:string}}}|null };
+type ProductMedia = {id:string;product_id:string;storage_path:string|null;source_url:string|null;alt_text:string;media_kind:string;rights_status:string;rights_evidence_note:string|null;review_status:string;is_primary:boolean;created_at:string};
 const statusLabels:Record<string,string>={draft:"Draft",review:"Menunggu review",approved:"Disetujui",published:"Tayang",rejected:"Ditolak",archived:"Arsip"};
 const conditionLabels:Record<string,string>={new_oem:"Baru · OEM",new_aftermarket:"Baru · aftermarket",used:"Bekas",refurbished:"Rekondisi",remanufactured:"Remanufaktur",damaged_for_parts:"Untuk kanibal part"};
 
@@ -15,6 +16,7 @@ export default function CatalogPage(){
  const [products,setProducts]=useState<Product[]>([]); const [query,setQuery]=useState(""); const [status,setStatus]=useState("all");
  const [loading,setLoading]=useState(true); const [error,setError]=useState(""); const [role,setRole]=useState(""); const [selected,setSelected]=useState<Product|null>(null);
  const [fitments,setFitments]=useState<Fitment[]>([]); const [fitmentLoading,setFitmentLoading]=useState(false);
+ const [mediaSelected,setMediaSelected]=useState<Product|null>(null); const [mediaRows,setMediaRows]=useState<ProductMedia[]>([]); const [mediaLoading,setMediaLoading]=useState(false); const [mediaBusy,setMediaBusy]=useState(false); const [mediaFile,setMediaFile]=useState<File|null>(null); const [mediaAlt,setMediaAlt]=useState(""); const [mediaRights,setMediaRights]=useState("unknown"); const [mediaEvidence,setMediaEvidence]=useState(""); const [mediaNotice,setMediaNotice]=useState(""); const [mediaError,setMediaError]=useState("");
  const [accessToken,setAccessToken]=useState(""); const [action,setAction]=useState("create_product"); const [actionProductId,setActionProductId]=useState(""); const [formName,setFormName]=useState(""); const [formSku,setFormSku]=useState(""); const [formSlug,setFormSlug]=useState(""); const [formCategory,setFormCategory]=useState(""); const [formCondition,setFormCondition]=useState("new_aftermarket"); const [formPrice,setFormPrice]=useState(""); const [formRights,setFormRights]=useState(""); const [actionReason,setActionReason]=useState(""); const [actionNotice,setActionNotice]=useState(""); const [actionBusy,setActionBusy]=useState(false);
  const load=useCallback(async()=>{
   setLoading(true);setError("");
@@ -31,6 +33,35 @@ export default function CatalogPage(){
  },[supabase,router]);
  useEffect(()=>{void load()},[load]);
  const filtered=useMemo(()=>products.filter(p=>(status==="all"||p.status===status)&&[p.name,p.sku??"",p.brand??"",p.part_number??"",p.category??""].some(v=>v.toLowerCase().includes(query.toLowerCase()))),[products,status,query]);
+ async function loadMedia(product:Product){
+  setMediaSelected(product);setMediaRows([]);setMediaFile(null);setMediaAlt("");setMediaRights("unknown");setMediaEvidence("");setMediaNotice("");setMediaError("");setMediaLoading(true);
+  if(!supabase){setMediaError("Supabase belum dikonfigurasi.");setMediaLoading(false);return;}
+  const {data,error:e}=await supabase.from("product_media").select("id,product_id,storage_path,source_url,alt_text,media_kind,rights_status,rights_evidence_note,review_status,is_primary,created_at").eq("product_id",product.id).order("created_at",{ascending:false});
+  if(e)setMediaError("Metadata foto tidak dapat dimuat. Periksa migrasi dan kebijakan RLS.");else setMediaRows((data??[]) as ProductMedia[]);
+  setMediaLoading(false);
+ }
+ async function uploadProductPhoto(){
+  if(!supabase||!mediaSelected||!mediaFile){setMediaError("Pilih file foto terlebih dahulu.");return;}
+  if(!mediaAlt.trim()){setMediaError("Isi teks alternatif yang menjelaskan foto.");return;}
+  if(!["image/jpeg","image/png","image/webp","image/avif"].includes(mediaFile.type)){setMediaError("Format file harus JPG, PNG, WebP, atau AVIF.");return;}
+  if(mediaFile.size>15*1024*1024){setMediaError("Ukuran foto maksimal 15 MB.");return;}
+  setMediaBusy(true);setMediaError("");setMediaNotice("");
+  const {data:{user}}=await supabase.auth.getUser();
+  if(!user){setMediaError("Sesi staf berakhir. Silakan login kembali.");setMediaBusy(false);return;}
+  const extension=mediaFile.name.split(".").pop()?.toLowerCase()||"jpg";
+  const storagePath=mediaSelected.id+"/"+crypto.randomUUID()+"."+extension;
+  try{
+   const upload=await supabase.storage.from("product-media").upload(storagePath,mediaFile,{contentType:mediaFile.type,upsert:false});
+   if(upload.error)throw new Error("Upload file gagal: "+upload.error.message);
+   const digest=await crypto.subtle.digest("SHA-256",await mediaFile.arrayBuffer());
+   const sha256=Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,"0")).join("");
+   const {error:insertError}=await supabase.from("product_media").insert({product_id:mediaSelected.id,storage_path:storagePath,source_listing_url:null,source_name:"staff_file_upload",media_kind:"product_photo",alt_text:mediaAlt.trim(),content_type:mediaFile.type,byte_size:mediaFile.size,sha256,rights_status:mediaRights,rights_evidence_note:mediaEvidence.trim()||null,review_status:"pending",is_primary:false,captured_at:new Date().toISOString(),created_by:user.id});
+   if(insertError){await supabase.storage.from("product-media").remove([storagePath]);throw new Error("Metadata gagal disimpan: "+insertError.message);}
+   setMediaNotice("Foto berhasil diunggah dari perangkat dan menunggu review. Foto belum ditampilkan ke pelanggan.");
+   setMediaFile(null);setMediaAlt("");await loadMedia(mediaSelected);
+  }catch(e){setMediaError(e instanceof Error?e.message:"Upload foto gagal.");}
+  finally{setMediaBusy(false);}
+ }
  async function showFitments(p:Product){setSelected(p);setFitments([]);setFitmentLoading(true);setError("");if(!supabase){setFitmentLoading(false);return;}
   const {data,error:e}=await supabase.from("product_fitments").select("id,status,evidence_url,evidence_note,verified_at,variant_id,vehicle_variants(name,year_start,year_end,vehicle_models(name,vehicle_makes(name)))").eq("product_id",p.id).order("created_at",{ascending:false});
   if(e)setError("Bukti fitment tidak dapat dimuat oleh kebijakan database.");else setFitments((data??[]) as unknown as Fitment[]);setFitmentLoading(false);
@@ -43,7 +74,7 @@ export default function CatalogPage(){
    <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">{Object.entries(statusLabels).map(([key,label])=><button key={key} onClick={()=>setStatus(status===key?"all":key)} className={`rounded-2xl border p-4 text-left transition ${status===key?"border-orange-300 bg-orange-50":"border-slate-200 bg-white hover:border-slate-300"}`}><p className="text-[11px] font-semibold text-slate-500">{label}</p><p className="mt-1 text-2xl font-extrabold tabular-nums">{products.filter(p=>p.status===key).length}</p></button>)}</div>
    <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white">
     <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"><div><h2 className="font-extrabold">Daftar produk</h2><p className="mt-1 text-xs text-slate-500">{filtered.length} dari {products.length} produk yang dapat diakses</p></div><label className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3 sm:w-80"><Search size={17} className="shrink-0 text-slate-400"/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari nama, SKU, merek, part…" className="min-w-0 flex-1 bg-transparent text-sm outline-none"/></label></div>
-    {loading?<div className="p-8 text-sm text-slate-500">Memuat katalog dari Supabase…</div>:error&&!products.length?<div role="alert" className="m-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{error}</div>:filtered.length===0?<div className="p-10 text-center"><PackageSearch size={30} className="mx-auto text-slate-300"/><p className="mt-3 font-bold">{query?"Produk tidak ditemukan":"Belum ada produk pada status ini"}</p><p className="mt-1 text-sm text-slate-500">Tidak ada data contoh yang dibuat.</p></div>:<div className="divide-y divide-slate-100">{filtered.map(p=><article key={p.id} className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-5"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="rounded-md bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-600">{p.sku||"SKU belum ada"}</span><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold">{statusLabels[p.status]??p.status}</span></div><h3 className="mt-2 break-words font-extrabold">{p.name}</h3><p className="mt-1 text-xs text-slate-500">{[p.brand,p.part_number,p.category].filter(Boolean).join(" · ")||"Merek, nomor part, atau kategori belum diisi"}</p><p className="mt-2 text-sm font-bold">{money(p.retail_price)} <span className="ml-2 font-normal text-slate-500">{conditionLabels[p.condition]??p.condition}</span></p><p className="mt-1 text-xs text-slate-400">Garansi: {p.warranty_days} hari</p></div><button onClick={()=>void showFitments(p)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-bold hover:bg-slate-50"><Wrench size={15}/> Bukti fitment</button></article>)}</div>}
+    {loading?<div className="p-8 text-sm text-slate-500">Memuat katalog dari Supabase…</div>:error&&!products.length?<div role="alert" className="m-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{error}</div>:filtered.length===0?<div className="p-10 text-center"><PackageSearch size={30} className="mx-auto text-slate-300"/><p className="mt-3 font-bold">{query?"Produk tidak ditemukan":"Belum ada produk pada status ini"}</p><p className="mt-1 text-sm text-slate-500">Tidak ada data contoh yang dibuat.</p></div>:<div className="divide-y divide-slate-100">{filtered.map(p=><article key={p.id} className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-5"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="rounded-md bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-600">{p.sku||"SKU belum ada"}</span><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold">{statusLabels[p.status]??p.status}</span></div><h3 className="mt-2 break-words font-extrabold">{p.name}</h3><p className="mt-1 text-xs text-slate-500">{[p.brand,p.part_number,p.category].filter(Boolean).join(" · ")||"Merek, nomor part, atau kategori belum diisi"}</p><p className="mt-2 text-sm font-bold">{money(p.retail_price)} <span className="ml-2 font-normal text-slate-500">{conditionLabels[p.condition]??p.condition}</span></p><p className="mt-1 text-xs text-slate-400">Garansi: {p.warranty_days} hari</p></div><div className="flex flex-wrap gap-2"><button onClick={()=>void loadMedia(p)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-bold hover:bg-slate-50"><ImagePlus size={15}/> Foto produk</button><button onClick={()=>void showFitments(p)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-bold hover:bg-slate-50"><Wrench size={15}/> Bukti fitment</button></div></article>)}</div>}
     {error&&products.length>0&&<p role="alert" className="border-t border-amber-100 bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}
    </section>
    <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
