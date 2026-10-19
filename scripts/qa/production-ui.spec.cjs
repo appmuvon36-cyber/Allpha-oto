@@ -1,3 +1,4 @@
+/* eslint @typescript-eslint/no-require-imports: off -- Playwright CJS spec runs without ESM package mode. */
 const { test, expect } = require("@playwright/test");
 
 const WEB = process.env.OTOCLINIC_WEB_URL || "https://otoclinic-web-production.up.railway.app";
