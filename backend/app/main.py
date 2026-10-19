@@ -1474,3 +1474,6 @@ async def list_admin_audit(
 # Phase 07 transaction endpoints are mounted after the shared auth/data helpers.
 from app.phase07 import router as phase07_router
 app.include_router(phase07_router)
+
+from app.shipping import router as shipping_router
+app.include_router(shipping_router)
