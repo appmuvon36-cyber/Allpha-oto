@@ -7,3 +7,5 @@ begin
     alter table public.products add constraint products_weight_grams_positive_check check (weight_grams is null or weight_grams > 0) not valid;
   end if;
 end $$;
+
+alter table public.oto_orders drop constraint if exists oto_orders_shipping_fee_unconfigured_check;
