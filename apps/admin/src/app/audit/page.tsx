@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, ArrowLeft, ChevronLeft, ChevronRight, Filter, RefreshCw, Search } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
