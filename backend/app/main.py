@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     # RajaOngkir shipping-cost integration. API key and origin ID remain unset
     # until the owner adds a real key and resolves the warehouse destination ID.
     rajaongkir_api_key: str = ""
+    rajaongkir_quote_signing_secret: str = ""
     rajaongkir_base_url: str = "https://rajaongkir.komerce.id/api/v1"
     rajaongkir_origin_address: str = ""
     rajaongkir_origin_search: str = ""
