@@ -65,3 +65,28 @@ AFTER INSERT OR UPDATE OR DELETE ON public.oto_order_items
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW
 EXECUTE FUNCTION public.oto_validate_checkout_shipping_weight();
+
+
+-- Publishing is blocked unless a real positive package weight is recorded.
+-- The trigger inspects NEW only and does not bypass RLS or perform privileged reads.
+CREATE OR REPLACE FUNCTION public.oto_require_shipping_weight_on_publish()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path TO 'pg_catalog', 'public'
+AS $function$
+BEGIN
+  IF NEW.status::text = 'published'
+     AND (NEW.weight_grams IS NULL OR NEW.weight_grams < 1) THEN
+    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'published_product_shipping_weight_required';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.oto_require_shipping_weight_on_publish() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS oto_product_shipping_weight_publish_guard ON public.products;
+CREATE TRIGGER oto_product_shipping_weight_publish_guard
+BEFORE INSERT OR UPDATE OF status, weight_grams ON public.products
+FOR EACH ROW
+EXECUTE FUNCTION public.oto_require_shipping_weight_on_publish();
