@@ -38,8 +38,6 @@ class EC01SourcingStockContracts(unittest.TestCase):
         }]
 
         async def fake_get(table, params, access_token=None):
-            if table == "product_categories":
-                return category_rows
             if table == "products":
                 self.assertIn("or", params)
                 self.assertIn("Rem", params["or"])
@@ -47,11 +45,16 @@ class EC01SourcingStockContracts(unittest.TestCase):
                 return product_rows
             raise AssertionError(f"Unexpected table {table}")
 
+        async def fake_rpc(function, payload):
+            if function == "oto_public_product_categories":
+                return category_rows
+            if function == "oto_public_stock_status":
+                return [{"product_id": product_id, "stock_status": "low_stock", "checked_at": "2026-10-19T00:00:00Z"}]
+            raise AssertionError(f"Unexpected RPC {function}")
+
         with patch.object(api, "supabase_get", new_callable=AsyncMock, side_effect=fake_get), \
              patch.object(api, "public_product_media", new_callable=AsyncMock, return_value={}), \
-             patch.object(api, "supabase_rpc", new_callable=AsyncMock, return_value=[{
-                 "product_id": product_id, "stock_status": "low_stock", "checked_at": "2026-10-19T00:00:00Z"
-             }]):
+             patch.object(api, "supabase_rpc", new_callable=AsyncMock, side_effect=fake_rpc):
             response = self.client.get("/v1/catalog/products", params={"category_id": root_id})
 
         self.assertEqual(response.status_code, 200, response.text)
