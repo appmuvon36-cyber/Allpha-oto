@@ -122,7 +122,7 @@ export default function HomePage() {
     </section>
     <section className="mx-auto max-w-7xl px-3 pt-7 sm:px-6 sm:pt-10" aria-labelledby="koleksi-title">
       <div className="flex items-end justify-between gap-3"><div><p className="text-[10px] font-extrabold uppercase tracking-[.16em] text-[var(--color-primary)]">Temukan kebutuhan Anda</p><h2 id="koleksi-title" className="mt-1 text-lg font-black tracking-tight sm:text-2xl">Pilihan katalog</h2></div><a href="#katalog" className="text-[11px] font-extrabold text-[var(--color-primary)] sm:text-xs">Lihat semua</a></div>
-      <div className="collection-rail mt-3 flex gap-2 overflow-x-auto pb-2" aria-label="Kategori koleksi katalog">
+      <div className="collection-rail mt-3 flex flex-wrap gap-2 pb-2" aria-label="Kategori koleksi katalog">
         {[["Semua produk","katalog"],["Best seller","shelf-best-seller"],["Popular","shelf-popular"],["Secondary","shelf-secondary"],["Produk baru","shelf-new"],["Promo","shelf-promo"],["Iklan","shelf-ads"]].map(([label,id],i)=><a key={id} href={"#"+id} className={`shrink-0 rounded-full border px-4 py-2.5 text-xs font-extrabold ${i===0?"border-[var(--color-primary)] bg-[var(--color-primary)] text-white":"border-slate-200 bg-white text-slate-700 hover:border-orange-200 hover:text-[var(--color-primary)]"}`}>{label}</a>)}
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
