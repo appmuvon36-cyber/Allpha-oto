@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     rajaongkir_origin_id: str = ""
     rajaongkir_default_couriers: str = "jne:jnt:sicepat:ide:sap:ninja:tiki:lion:anteraja:pos"
     rajaongkir_quote_ttl_seconds: int = Field(default=900, ge=60, le=3600)
+    # International WhatsApp Business number (digits with country code, e.g. 62...).
+    whatsapp_business_phone: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
