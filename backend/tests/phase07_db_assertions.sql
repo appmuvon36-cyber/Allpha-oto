@@ -66,7 +66,7 @@ begin
   perform set_config('request.jwt.claim.sub',customer_id::text,true);
   result:=public.oto_order_mutate('checkout',null,jsonb_set(checkout_payload,'{items,0,quantity}','2'::jsonb),'phase07-checkout-expiry-01');
   order_id:=(result#>>'{order,id}')::uuid;
-  update public.inventory_reservations ir set expires_at=now()-interval '1 minute' where ir.order_id=order_id and ir.status='reserved';
+  update public.inventory_reservations ir set expires_at=now()-interval '1 minute' where ir.order_id=(result#>>'{order,id}')::uuid and ir.status='reserved';
   perform set_config('request.jwt.claim.sub',manager_id::text,true);
   result:=public.oto_expire_reservations('phase07-expire-reservations-01');
   if (result->>'cancelled_orders')::integer<>1 or (result->>'released_reservations')::integer<>1 then raise exception 'phase07 reservation expiry counts mismatch'; end if;
