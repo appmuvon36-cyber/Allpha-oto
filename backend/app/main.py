@@ -178,6 +178,44 @@ async def supabase_get(
         raise HTTPException(status_code=503, detail="Could not reach the data service.") from exc
 
 
+
+async def supabase_count(
+    table: str,
+    params: dict[str, str],
+    access_token: str,
+    select_column: str = "id",
+) -> int:
+    """Count rows visible to the caller under Postgres grants and RLS."""
+    supabase_url, anon_key = require_supabase_configuration()
+    query = {"select": select_column, "limit": "1", **params}
+    headers = {
+        "apikey": anon_key,
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json",
+        "Prefer": "count=exact",
+        "Range": "0-0",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.get(f"{supabase_url}/rest/v1/{table}", params=query, headers=headers)
+        if response.status_code in (401, 403):
+            raise HTTPException(status_code=503, detail="Dashboard data is unavailable under current database policies.")
+        if response.status_code == 429 or response.status_code >= 500:
+            raise HTTPException(status_code=503, detail="Dashboard data service is temporarily unavailable.")
+        if response.status_code not in (200, 206):
+            raise HTTPException(status_code=503, detail="Dashboard count query failed.")
+        content_range = response.headers.get("content-range", "")
+        total = content_range.rsplit("/", 1)[-1] if "/" in content_range else ""
+        if not total.isdigit():
+            raise HTTPException(status_code=503, detail="Dashboard count response was incomplete.")
+        return int(total)
+    except HTTPException:
+        raise
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail="Dashboard count request timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Could not reach dashboard data service.") from exc
+
 def safe_search_term(value: str) -> str:
     """Keep user search input from altering PostgREST filter grammar."""
     return re.sub(r"[^\w .\-]", " ", value, flags=re.UNICODE).strip()
@@ -847,6 +885,208 @@ async def list_supplier_audit(
         },
         access_token=identity["_access_token"],
     )
+    return {
+        "items": rows,
+        "count": len(rows),
+        "limit": limit,
+        "offset": offset,
+        "next_offset": offset + limit if len(rows) == limit else None,
+    }
+
+
+
+class AdminRoleMutation(BaseModel):
+    role: str = Field(min_length=1, max_length=32)
+    is_active: bool
+
+    model_config = {"extra": "forbid"}
+
+
+async def supabase_admin_role_rpc(
+    target_user_id: UUID,
+    role: str,
+    is_active: bool,
+    request_id: str,
+    access_token: str,
+) -> dict[str, Any]:
+    supabase_url, anon_key = require_supabase_configuration()
+    headers = {
+        "apikey": anon_key,
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                f"{supabase_url}/rest/v1/rpc/oto_admin_set_user_role",
+                headers=headers,
+                json={
+                    "p_target_user_id": str(target_user_id),
+                    "p_role": role,
+                    "p_is_active": is_active,
+                    "p_request_id": request_id,
+                },
+            )
+        if response.status_code in (401, 403):
+            raise HTTPException(status_code=403, detail="Role change is not permitted.")
+        if response.status_code == 429 or response.status_code >= 500:
+            raise HTTPException(status_code=503, detail="Role service is temporarily unavailable.")
+        if response.status_code not in (200, 201):
+            body = response.json() if response.content else {}
+            message = str(body.get("message", "")) if isinstance(body, dict) else ""
+            if "target_profile_not_found" in message:
+                raise HTTPException(status_code=404, detail="Target profile was not found.")
+            if "cannot_remove_last_active_admin" in message:
+                raise HTTPException(status_code=409, detail="The last active administrator cannot be removed.")
+            if "request_id_reused_for_different_operation" in message:
+                raise HTTPException(status_code=409, detail="Idempotency key was already used for another request.")
+            if "cannot_change_own_role_or_active_state" in message:
+                raise HTTPException(status_code=422, detail="You cannot change your own role or active state.")
+            if "request_id_invalid" in message or "role_change_payload_invalid" in message:
+                raise HTTPException(status_code=422, detail="Role change request is invalid.")
+            if "admin_role_required" in message or "authentication_required" in message:
+                raise HTTPException(status_code=403, detail="An active administrator role is required.")
+            raise HTTPException(status_code=422, detail="Role change was rejected by the database guard.")
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=503, detail="Role service returned an invalid response.")
+        return payload
+    except HTTPException:
+        raise
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail="Role service request timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Could not reach role service.") from exc
+
+
+@app.get("/v1/admin/overview", tags=["admin"])
+async def admin_overview(
+    identity: dict[str, Any] = Depends(require_roles(
+        "admin", "catalog_editor", "inventory_manager", "order_manager", "moderator"
+    )),
+) -> dict[str, Any]:
+    """Return role-scoped operational metrics; unavailable domains are explicitly null."""
+    role = identity["role"]
+    token = identity["_access_token"]
+    metric_specs: dict[str, tuple[str, dict[str, str], set[str], str]] = {
+        "products": ("products", {}, {"admin", "catalog_editor", "moderator"}, "id"),
+        "products_review": ("products", {"status": "eq.review"}, {"admin", "catalog_editor", "moderator"}, "id"),
+        "fitments": ("product_fitments", {}, {"admin", "catalog_editor", "moderator"}, "id"),
+        "fitments_review": ("product_fitments", {"status": "eq.needs_review"}, {"admin", "catalog_editor", "moderator"}, "id"),
+        "suppliers": ("suppliers", {}, {"admin", "catalog_editor", "inventory_manager", "moderator"}, "id"),
+        "suppliers_review": ("suppliers", {"status": "eq.pending_review"}, {"admin", "catalog_editor", "inventory_manager", "moderator"}, "id"),
+        "supplier_offers": ("supplier_offers", {}, {"admin", "catalog_editor", "inventory_manager", "moderator"}, "id"),
+        "supplier_offers_review": ("supplier_offers", {"status": "eq.pending_review"}, {"admin", "catalog_editor", "inventory_manager", "moderator"}, "id"),
+        "supplier_documents_review": ("supplier_documents", {"status": "eq.pending_review"}, {"admin", "catalog_editor", "moderator"}, "id"),
+        "inventory_movements": ("inventory_ledger", {}, {"admin", "inventory_manager", "order_manager"}, "id"),
+        "inventory_products": ("inventory_balances", {}, {"admin", "inventory_manager", "order_manager"}, "product_id"),
+        "orders": ("oto_orders", {}, {"admin", "order_manager"}, "id"),
+        "orders_open": ("oto_orders", {"status": "in.(pending_payment,payment_review,paid,processing,shipped)"}, {"admin", "order_manager"}, "id"),
+        "payment_reviews": ("oto_payment_events", {"status": "eq.pending_review"}, {"admin", "order_manager"}, "id"),
+        "returns_open": ("oto_returns", {"status": "in.(requested,approved,received,refund_pending)"}, {"admin", "order_manager"}, "id"),
+        "audit_events": ("audit_logs", {}, {"admin"}, "id"),
+        "user_profiles": ("user_profiles", {}, {"admin"}, "id"),
+    }
+    async def read_metric(spec: tuple[str, dict[str, str], set[str], str]) -> int | None:
+        table, filters, roles, select_column = spec
+        if role not in roles:
+            return None
+        return await supabase_count(table, filters, token, select_column)
+
+    metric_keys = list(metric_specs)
+    metric_values = await __import__("asyncio").gather(*(read_metric(metric_specs[key]) for key in metric_keys))
+    metrics = {
+        key: {"value": metric_values[index], "available": metric_values[index] is not None}
+        for index, key in enumerate(metric_keys)
+    }
+    latest_products: list[dict[str, Any]] = []
+    if role in {"admin", "catalog_editor", "moderator"}:
+        latest_products = await supabase_get(
+            "products",
+            {
+                "select": "id,sku,name,category,condition,status,retail_price,updated_at",
+                "order": "updated_at.desc",
+                "limit": "6",
+            },
+            access_token=token,
+        )
+    return {
+        "generated_at": datetime.now().astimezone().isoformat(),
+        "role": role,
+        "metrics": metrics,
+        "latest_products": latest_products,
+    }
+
+
+@app.get("/v1/admin/users", tags=["admin"])
+async def list_admin_users(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10000),
+    identity: dict[str, Any] = Depends(require_roles("admin")),
+) -> dict[str, Any]:
+    rows = await supabase_get(
+        "user_profiles",
+        {
+            "select": "id,display_name,role,is_active,created_at,updated_at",
+            "order": "created_at.desc",
+            "limit": str(limit),
+            "offset": str(offset),
+        },
+        access_token=identity["_access_token"],
+    )
+    return {
+        "items": rows,
+        "count": len(rows),
+        "limit": limit,
+        "offset": offset,
+        "next_offset": offset + limit if len(rows) == limit else None,
+    }
+
+
+@app.post("/v1/admin/users/{user_id}/role", tags=["admin"])
+async def mutate_admin_user_role(
+    user_id: UUID,
+    mutation: AdminRoleMutation = Body(...),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    identity: dict[str, Any] = Depends(require_roles("admin")),
+) -> dict[str, Any]:
+    allowed_roles = {
+        "customer", "supplier", "catalog_editor", "inventory_manager",
+        "order_manager", "moderator", "admin",
+    }
+    if mutation.role not in allowed_roles:
+        raise HTTPException(status_code=422, detail="Role value is not supported.")
+    result = await supabase_admin_role_rpc(
+        user_id, mutation.role, mutation.is_active, idempotency_key, identity["_access_token"]
+    )
+    return {"result": result}
+
+
+@app.get("/v1/admin/audit", tags=["admin"])
+async def list_admin_audit(
+    action: str | None = Query(default=None, max_length=80),
+    entity_type: str | None = Query(default=None, max_length=80),
+    q: str | None = Query(default=None, max_length=80),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10000),
+    identity: dict[str, Any] = Depends(require_roles("admin")),
+) -> dict[str, Any]:
+    params = {
+        "select": "id,actor_user_id,action,entity_type,entity_id,request_id,created_at",
+        "order": "created_at.desc",
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if action:
+        params["action"] = f"eq.{safe_search_term(action)}"
+    if entity_type:
+        params["entity_type"] = f"eq.{safe_search_term(entity_type)}"
+    if q:
+        term = safe_search_term(q)
+        if term:
+            params["or"] = f"(action.ilike.*{term}*,entity_type.ilike.*{term}*,request_id.ilike.*{term}*)"
+    rows = await supabase_get("audit_logs", params, access_token=identity["_access_token"])
     return {
         "items": rows,
         "count": len(rows),
