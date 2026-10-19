@@ -16,6 +16,17 @@ begin
   perform set_config('request.jwt.claim.sub',manager_id::text,true);
   result:=public.oto_inventory_mutate('receipt',product_id,'{"quantity":10,"reason":"CI fixture opening balance"}'::jsonb,'phase07-stock-receipt-001');
   if (result#>>'{balance,on_hand}')::integer<>10 then raise exception 'phase07 receipt balance mismatch'; end if;
+  -- Forced audit failure must roll back balance, ledger and idempotency writes together.
+  begin
+    perform public.oto_inventory_mutate('receipt',product_id,'{"quantity":3,"reason":"forced audit rollback"}'::jsonb,'phase05-force-audit-failure');
+  exception when others then
+    if position('fixture_forced_audit_failure' in sqlerrm)=0 then raise; end if;
+  end;
+  if (select b.on_hand from public.inventory_balances b where b.product_id='07000000-0000-4000-8000-000000000003'::uuid)<>10
+     or exists(select 1 from public.oto_idempotency_records where actor_user_id=manager_id and request_id='phase05-force-audit-failure')
+     or exists(select 1 from public.inventory_ledger where product_id=product_id and reason='forced audit rollback') then
+    raise exception 'phase07 failed to roll back mutation after audit failure';
+  end if;
   select count(*) into orders_before from public.oto_orders;
   perform set_config('request.jwt.claim.sub',customer_id::text,true);
   result:=public.oto_order_mutate('checkout',null,checkout_payload,'phase07-checkout-0001');
