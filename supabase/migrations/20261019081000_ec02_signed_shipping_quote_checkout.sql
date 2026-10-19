@@ -204,7 +204,7 @@ begin
  coalesce(p_order_id,(out->'order'->>'id')::uuid,(out->'return'->>'id')::uuid),p_request_id,
  jsonb_build_object('action',p_action,'order_id',coalesce(p_order_id,(out->'order'->>'id')::uuid),'result_status',coalesce(out->'order'->>'status',out->'return'->>'status'),'result_id',coalesce(out->'order'->>'id',out->'return'->>'id')));
  return out;
-end;$function$
+end;$function$;
 
 create or replace function public.oto_product_set_shipping_weight(p_product_id uuid, p_weight_grams integer, p_request_id text)
 returns jsonb language plpgsql security definer set search_path to 'pg_catalog','public' as $function$
