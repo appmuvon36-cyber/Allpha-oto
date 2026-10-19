@@ -5,7 +5,7 @@ from decimal import Decimal
 import hashlib
 import re
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from uuid import UUID
 
 import httpx
@@ -914,6 +914,125 @@ async def register_admin_product_media(product_id: UUID, request: ProductMediaRe
     rows = await supabase_write("POST", "product_media", identity["_access_token"], payload)
     if not rows: raise HTTPException(status_code=503, detail="Product image metadata was not returned after save.")
     return {"media": rows[0], "review_status": "pending"}
+
+
+class MarketplaceProductMediaImport(BaseModel):
+    image_url: str = Field(min_length=12, max_length=2048)
+    source_listing_url: str = Field(min_length=12, max_length=2048)
+    alt_text: str = Field(min_length=3, max_length=300)
+    model_config = {"extra": "forbid"}
+
+
+def validate_marketplace_image_url(value: str, *, listing: bool = False) -> str:
+    parsed = urlsplit(value)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if parsed.scheme != "https" or not host or parsed.username or parsed.password or parsed.port not in (None, 443):
+        raise HTTPException(status_code=422, detail="Marketplace source must be a valid HTTPS URL.")
+    if listing:
+        allowed = host in {"shopee.co.id", "www.shopee.co.id", "tokopedia.com", "www.tokopedia.com"}
+    else:
+        allowed = host.endswith(".susercontent.com") or host.endswith(".tokopedia-static.net") or host in {"images.tokopedia.net", "images.tokopedia.com"}
+    if not allowed:
+        raise HTTPException(status_code=422, detail="Image or listing URL is outside the supported marketplace domains.")
+    return value
+
+
+def detect_product_image_type(content: bytes) -> str | None:
+    if content.startswith(b"\\xff\\xd8\\xff"):
+        return "image/jpeg"
+    if content.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+        return "image/png"
+    if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "image/webp"
+    if len(content) >= 12 and content[4:8] == b"ftyp" and content[8:12] in {b"avif", b"avis"}:
+        return "image/avif"
+    return None
+
+
+@app.post("/v1/admin/catalog/products/{product_id}/media/import-marketplace", tags=["catalog"], status_code=201)
+async def import_marketplace_product_media(
+    product_id: UUID,
+    request: MarketplaceProductMediaImport = Body(...),
+    identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "moderator")),
+) -> dict[str, Any]:
+    """Copy a marketplace image into private Storage for draft review only; never grants image rights."""
+    user = identity.get("user") or {}
+    actor_id = user.get("id")
+    if not actor_id:
+        raise HTTPException(status_code=401, detail="Authenticated user required.")
+    image_url = validate_marketplace_image_url(request.image_url)
+    listing_url = validate_marketplace_image_url(request.source_listing_url, listing=True)
+    product_rows = await supabase_get("products", {"select": "id,status", "id": f"eq.{product_id}", "limit": "1"}, access_token=identity["_access_token"])
+    if not product_rows:
+        raise HTTPException(status_code=404, detail="Product was not found.")
+    if str(product_rows[0].get("status", "")).lower() not in {"draft", "in_review", "review"}:
+        raise HTTPException(status_code=409, detail="Marketplace reference images may only be attached to draft products awaiting review.")
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(12.0), follow_redirects=False) as client:
+            async with client.stream("GET", image_url, headers={"Accept": "image/avif,image/webp,image/png,image/jpeg"}) as response:
+                if response.status_code in (301, 302, 303, 307, 308):
+                    raise HTTPException(status_code=422, detail="Image CDN redirect is not accepted; provide the final image URL.")
+                if response.status_code == 404:
+                    raise HTTPException(status_code=404, detail="Marketplace image was not found.")
+                if response.status_code != 200:
+                    raise HTTPException(status_code=502, detail="Marketplace image source is unavailable.")
+                declared_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                if declared_type not in {"image/jpeg", "image/png", "image/webp", "image/avif"}:
+                    raise HTTPException(status_code=422, detail="Marketplace URL did not return a supported image type.")
+                declared_length = response.headers.get("content-length")
+                if declared_length and declared_length.isdigit() and int(declared_length) > 15 * 1024 * 1024:
+                    raise HTTPException(status_code=413, detail="Marketplace image exceeds the 15 MB limit.")
+                chunks = bytearray()
+                async for chunk in response.aiter_bytes():
+                    chunks.extend(chunk)
+                    if len(chunks) > 15 * 1024 * 1024:
+                        raise HTTPException(status_code=413, detail="Marketplace image exceeds the 15 MB limit.")
+                content = bytes(chunks)
+    except HTTPException:
+        raise
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="Marketplace image download timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Marketplace image could not be downloaded.") from exc
+
+    detected_type = detect_product_image_type(content)
+    if not content or detected_type is None or detected_type != declared_type:
+        raise HTTPException(status_code=422, detail="Downloaded bytes do not match a supported image format.")
+    supabase_url, anon_key = require_supabase_configuration()
+    sha256 = hashlib.sha256(content).hexdigest()
+    extension = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/avif": "avif"}[detected_type]
+    storage_path = f"{product_id}/{UUID(bytes=__import__('os').urandom(16), version=4)}.{extension}"
+    headers = {"apikey": anon_key, "Authorization": f"Bearer {identity['_access_token']}", "Content-Type": detected_type, "x-upsert": "false"}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            upload = await client.post(f"{supabase_url}/storage/v1/object/product-media/{quote(storage_path, safe='/')}", headers=headers, content=content)
+        if upload.status_code in (401, 403):
+            raise HTTPException(status_code=403, detail="Storage policy does not permit this staff upload.")
+        if upload.status_code == 413:
+            raise HTTPException(status_code=413, detail="Storage rejected the image size.")
+        if upload.status_code not in (200, 201):
+            raise HTTPException(status_code=503, detail="Private product image could not be stored.")
+        verified_sha256 = await verify_product_media_upload(storage_path, detected_type, len(content), sha256, identity["_access_token"])
+        payload = {
+            "product_id": str(product_id), "storage_path": storage_path, "source_url": image_url,
+            "source_listing_url": listing_url, "source_name": "marketplace_image_import",
+            "media_kind": "product_photo", "alt_text": request.alt_text.strip(), "content_type": detected_type,
+            "byte_size": len(content), "sha256": verified_sha256, "rights_status": "unknown",
+            "rights_evidence_note": "Marketplace image copied for internal draft review only. Usage rights are UNVERIFIED; do not approve or publish until written permission or a valid license is verified.",
+            "review_status": "pending", "is_primary": False, "captured_at": datetime.now(timezone.utc).isoformat(), "created_by": actor_id,
+        }
+        rows = await supabase_write("POST", "product_media", identity["_access_token"], payload)
+        if not rows:
+            raise HTTPException(status_code=503, detail="Image metadata was not returned after save.")
+        return {"media": rows[0], "review_status": "pending", "rights_status": "unknown", "customer_visible": False}
+    except Exception:
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                await client.delete(f"{supabase_url}/storage/v1/object/product-media/{quote(storage_path, safe='/')}", headers={"apikey": anon_key, "Authorization": f"Bearer {identity['_access_token']}"})
+        except Exception:
+            pass
+        raise
 
 
 class ProductCategoryCreate(BaseModel):
