@@ -87,3 +87,25 @@ Screenshot links are temporary signed evidence URLs and may expire.
 2. Repeat direct-route, loading, error, empty, keyboard and back/forward checks across all customer routes and all Admin operational routes.
 3. With approved test identities, test customer login, real vehicle selection/product/cart/checkout/order path, plus staff role-allowed and role-denied behavior. Current empty production taxonomy/catalog prevents positive commerce-path verification without approved non-production fixtures or real approved catalog data.
 4. Keep the phase gate **PARTIAL** until the above evidence is recorded. Phase 10 remains deferred.
+
+
+## Playwright viewport and route QA — 19 October 2026 (latest run)
+
+A dedicated read-only production browser test harness is now committed:
+- Test: `scripts/qa/production-ui.spec.cjs`
+- Workflow: `.github/workflows/production-ui-qa.yml`
+- Workflow run page: https://github.com/appmuvon36-cyber/Allpha-oto/actions/workflows/production-ui-qa.yml
+- Latest verified run commit: `c1da0c685f0e01f574799c89891793d3f4df5909`
+- Run **#4 completed successfully**; the browser test job and artifact upload steps reported success.
+- First run (before adding the loading assertion): https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39189850049
+- Workflow artifact name: `otoclinic-production-ui-qa` (screenshots and test report, retained for 14 days).
+
+The Playwright workflow now measures `documentElement.scrollWidth` and `body.scrollWidth` at real Chromium viewports 360, 390, 820 and 1440 px and fails if either exceeds the requested viewport. It also checks category-to-search, empty results, visible keyboard focus, browser back/forward, direct customer routes including `/checkout`, forced catalog API error state, delayed loading skeleton then empty state, empty vehicle taxonomy controls, unauthenticated Admin route guards, and unauthenticated private API responses.
+
+This is a read-only production test suite: it does not create orders, change roles, mutate catalog records, or seed production data. A green workflow confirms the assertions in this suite passed against the live routes at test time; it does not prove authorized customer/staff flows or ownership/IDOR behavior.
+
+## Authorization matrix status
+**Blocked pending approved test identities.** No approved test-customer or staff credentials were available in the current project context. Do not request or commit passwords in chat or repository files. The authorized matrix must use owner-approved accounts and secrets supplied through a secure test runner, covering customer own-account/order access, non-customer denied customer-only routes, and each staff role's allowed and denied modules. Do not create production identities or change roles without explicit approval.
+
+## Current verdict
+The responsive overflow + public interaction/state suite is now executable in CI and its latest run completed successfully. The full pre-Phase-10 QA gate remains **PARTIAL** until an approved authenticated role matrix and remaining exhaustive route/state/security checks are evidenced. Phase 10 remains deferred.
