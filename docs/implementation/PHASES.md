@@ -93,6 +93,13 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 - Source commits: `a36e4971bc97c26e28ae9d7ccb89a058c1fec46b` (customer homepage), `602326903cca57c1392f124aeab71b9bbee29d6e` (customer styles), `7ef2ef139e2b5ab8e1680cacb17f11cbb1c462da` (admin navigation), `425d031d2ac00db801087656843887e0b999e5d6` (admin styles).
 - Remaining release gate: confirm CI/build for the exact source commits, deploy the web and admin services from the updated `main`, smoke-test public routes, and manually verify mobile/desktop visual behavior. Do not mark the refactor fully complete until this evidence is collected.
 
+## UI/UX Refactor QA Gate (PARTIAL — NOT CLOSED)
+- QA evidence and blockers are recorded in [UI_UX_REFACTOR_QA.md](./UI_UX_REFACTOR_QA.md).
+- Production screenshots were collected for Customer Web and Admin login at 360, 390, 820, and 1440px requested viewport widths. Public route smoke confirmed customer empty states and unauthenticated Admin redirects; this is not equivalent to full interactive or authenticated E2E.
+- The `/checkout` route returned 404 during smoke testing. An additive Next.js redirect was added so direct navigation routes into the existing authenticated cart/checkout flow; verify the exact deployment before considering this finding closed.
+- Vehicle taxonomy and public catalog APIs return empty arrays. No production seed data was inserted, so positive-path vehicle selection and cart/checkout cannot be fully exercised with live records.
+- Remaining: real browser interaction/overflow/keyboard checks at the four viewports, post-deploy checkout redirect smoke, authorized staff-role flows, approved test-customer checkout/order path, exact-commit CI/build confirmation. Phase 10 remains deferred until this gate is closed.
+
 ## Phase 10 — AI and search (NOT IMPLEMENTED)
 - Part number normalization, evidence-backed candidate search, confidence/uncertainty.
 - AI cannot independently publish uncertain fitment, price, or product data.
