@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from datetime import datetime, timezone
+import hashlib
+import hmac
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +17,7 @@ from app.main import (
     require_roles,
     require_supabase_configuration,
     supabase_get,
+    settings,
 )
 
 router = APIRouter()
@@ -230,8 +234,10 @@ async def checkout(
         normalized.append({"product_id": product_id, "quantity": quantity})
     if not normalized:
         raise HTTPException(status_code=422, detail="Keranjang masih kosong.")
-    shipping_address_snapshot = request.shipping_address.model_dump(mode="json", exclude_none=True)
-    shipping_address_snapshot["shipping_quote"] = {
+    if not settings.rajaongkir_quote_signing_secret:
+        raise HTTPException(status_code=503, detail="Checkout menunggu konfigurasi keamanan kutipan ongkir.")
+    quoted_at = datetime.now(timezone.utc).isoformat()
+    quote_snapshot = {
         "provider": "rajaongkir",
         "origin_id": live_quote["origin"]["id"],
         "origin_label": live_quote["origin"]["label"],
@@ -243,13 +249,28 @@ async def checkout(
         "description": selected["description"],
         "cost": server_shipping_fee,
         "weight_grams": live_quote["weight_grams"],
-        "quoted_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+        "quoted_at": quoted_at,
         "expires_in_seconds": live_quote["expires_in_seconds"],
     }
+    signed_fields = "|".join([
+        str(identity["user"]["id"]), str(quote_snapshot["origin_id"]),
+        str(quote_snapshot["destination_id"]), str(quote_snapshot["courier"]),
+        str(quote_snapshot["service"]), str(quote_snapshot["cost"]),
+        str(quote_snapshot["weight_grams"]), quoted_at,
+        str(quote_snapshot["expires_in_seconds"]),
+    ])
+    signature = hmac.new(
+        settings.rajaongkir_quote_signing_secret.encode("utf-8"),
+        signed_fields.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    shipping_address_snapshot = request.shipping_address.model_dump(mode="json", exclude_none=True)
+    shipping_address_snapshot["shipping_quote"] = quote_snapshot
     result = await order_rpc("checkout", None, {
         "items": normalized,
         "shipping_address": shipping_address_snapshot,
         "shipping_fee": str(server_shipping_fee),
+        "shipping_quote": {**quote_snapshot, "signature": signature},
     }, idempotency_key, identity)
     return {"result": result}
 
