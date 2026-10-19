@@ -132,6 +132,8 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "alter table public.user_profiles add column if not exists updated_at timestamptz not null default now()"
       - name: Add product shipping weight for EC-02
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019070000_ec02_product_shipping_weight.sql
+      - name: Apply EC-02 signed shipping quote checkout migration
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019081000_ec02_signed_shipping_quote_checkout.sql
       - name: Apply Phase 08 admin role management migration
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019010200_phase08_admin_role_management.sql
       - name: Verify Phase 08 role change, audit and idempotency
