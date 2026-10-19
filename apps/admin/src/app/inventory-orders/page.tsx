@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Boxes, ClipboardCheck, CreditCard, PackageCheck, RefreshCw, RotateCcw, Truck } from "lucide-react";
+import { ArrowLeft, Boxes, CreditCard, RefreshCw, RotateCcw, Truck } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://otoclinic-api-production.up.railway.app";
@@ -60,20 +60,26 @@ export default function InventoryOrdersPage() {
     }
     setRole(profile.role);
     const headers = { Authorization: "Bearer " + session.access_token };
+    const canManageOrders = ["admin", "order_manager"].includes(profile.role ?? "");
     const paths = [
       fetch(API + "/v1/admin/inventory?limit=100", { headers, cache: "no-store" }),
-      fetch(API + "/v1/admin/orders?limit=100", { headers, cache: "no-store" }),
-      fetch(API + "/v1/admin/payments?status=pending_review&limit=100", { headers, cache: "no-store" }),
-      fetch(API + "/v1/admin/returns?status=requested&limit=100", { headers, cache: "no-store" }),
+      canManageOrders ? fetch(API + "/v1/admin/orders?limit=100", { headers, cache: "no-store" }) : Promise.resolve(null),
+      canManageOrders ? fetch(API + "/v1/admin/payments?status=pending_review&limit=100", { headers, cache: "no-store" }) : Promise.resolve(null),
+      canManageOrders ? Promise.all(["requested", "approved", "refund_pending"].map(status => fetch(API + "/v1/admin/returns?status=" + status + "&limit=100", { headers, cache: "no-store" }))) : Promise.resolve(null),
     ];
-    const responses = await Promise.all(paths);
-    const bodies = await Promise.all(responses.map(async r => ({ ok: r.ok, status: r.status, body: await r.json().catch(() => ({})) })));
+    const [inventoryResponse, orderResponse, paymentResponse, returnResponses] = await Promise.all(paths);
+    const readResponse = async (r: Response | null) => r ? ({ ok: r.ok, status: r.status, body: await r.json().catch(() => ({})) }) : ({ ok: true, status: 200, body: { items: [] } });
+    const inventoryBody = await readResponse(inventoryResponse as Response);
+    const orderBody = await readResponse(orderResponse as Response | null);
+    const paymentBody = await readResponse(paymentResponse as Response | null);
+    const returnList = returnResponses ? await Promise.all((returnResponses as Response[]).map(readResponse)) : [];
+    const bodies = [inventoryBody, orderBody, paymentBody, ...returnList];
     const failed = bodies.find(x => !x.ok);
     if (failed) { setError("Queue transaksi tidak dapat dimuat (HTTP " + failed.status + "). Pastikan API, role, dan kebijakan RLS tersedia."); setLoading(false); return; }
     setInventory(bodies[0].body.items ?? []);
     setOrders(bodies[1].body.items ?? []);
     setPayments(bodies[2].body.items ?? []);
-    setReturns(bodies[3].body.items ?? []);
+    setReturns(returnList.flatMap(x => x.body.items ?? []));
     setLoading(false);
   }, [supabase]);
 
@@ -90,7 +96,7 @@ export default function InventoryOrdersPage() {
     finally { setBusy(""); }
   }
 
-  async function adjustStock(event: React.FormEvent<HTMLFormElement>) {
+  async function adjustStock(event: import("react").FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!productId.trim() || !reason.trim()) { setError("Product ID dan alasan mutasi wajib diisi."); return; }
     setBusy("inventory"); setError(""); setNotice("");
@@ -150,7 +156,7 @@ export default function InventoryOrdersPage() {
           {payments.length===0?<p className="p-8 text-sm text-slate-500">Tidak ada pembayaran menunggu review.</p>:<div className="divide-y">{payments.map(p=><article key={p.id} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="font-semibold">Order {p.order_id}</p><p className="text-sm text-slate-500">Bukti: {p.evidence_reference??"—"} · {new Date(p.created_at).toLocaleString("id-ID")}</p><p className="font-semibold">{money(p.amount)}</p></div><div className="flex flex-wrap gap-2"><button onClick={()=>{const ref=window.prompt("Nomor referensi bank/provider atau catatan verifikasi wajib");if(ref?.trim())void mutate("/v1/admin/orders/"+p.order_id+"/mutations","verify_payment",{payment_event_id:p.id,provider_reference:ref.trim()})}} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Verifikasi</button><button onClick={()=>{const reason=window.prompt("Alasan penolakan pembayaran");if(reason?.trim())void mutate("/v1/admin/orders/"+p.order_id+"/mutations","reject_payment",{payment_event_id:p.id,reason:reason.trim()})}} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700">Tolak</button></div></article>)}</div>}
         </section>}
         {tab === "returns" && <section className="overflow-hidden rounded-2xl border bg-white"><div className="border-b p-4"><h2 className="font-semibold">Retur dan refund</h2><p className="text-sm text-slate-500">Barang yang diterima tidak otomatis ditambahkan ke stok. Pilih item yang sudah diperiksa dan layak dijual saat penerimaan retur.</p></div>
-          {returns.length===0?<p className="p-8 text-sm text-slate-500">Tidak ada permintaan retur baru.</p>:<div className="divide-y">{returns.map(r=><article key={r.id} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="font-semibold">Order {r.order_id}</p><p className="text-sm text-slate-500">{r.reason}</p><p className="font-semibold">{money(r.requested_refund)}</p></div><div className="flex flex-wrap gap-2"><button onClick={()=>void mutate("/v1/admin/orders/"+r.order_id+"/mutations","approve_return",{return_id:r.id})} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Setujui retur</button><button onClick={()=>{const reason=window.prompt("Alasan penolakan retur");if(reason?.trim())void mutate("/v1/admin/orders/"+r.order_id+"/mutations","reject_return",{return_id:r.id,reason:reason.trim()})}} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700">Tolak</button></div></article>)}</div>}
+          {returns.length===0?<p className="p-8 text-sm text-slate-500">Tidak ada permintaan retur baru.</p>:<div className="divide-y">{returns.map(r=><article key={r.id} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="font-semibold">Order {r.order_id}</p><p className="text-sm text-slate-500">{r.reason}</p><p className="font-semibold">{money(r.requested_refund)}</p></div><div className="flex flex-wrap gap-2">{r.status==="requested"&&<><button onClick={()=>void mutate("/v1/admin/orders/"+r.order_id+"/mutations","approve_return",{return_id:r.id})} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Setujui retur</button><button onClick={()=>{const reason=window.prompt("Alasan penolakan retur");if(reason?.trim())void mutate("/v1/admin/orders/"+r.order_id+"/mutations","reject_return",{return_id:r.id,reason:reason.trim()})}} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700">Tolak</button></>}{r.status==="approved"&&<button onClick={async()=>{try{const detail=await api("/v1/orders/"+r.order_id);const options=(detail.items??[]).map((item:Row)=>item.name_snapshot+" · "+item.id).join("\n");const selected=window.prompt("Barang sudah diterima fisik. Masukkan UUID item yang lolos inspeksi untuk restock, pisahkan koma. Kosong = tidak restock.\n"+options,"");if(selected===null)return;const restock_items=selected.split(",").map(x=>x.trim()).filter(Boolean);await mutate("/v1/admin/orders/"+r.order_id+"/mutations","receive_return",{return_id:r.id,restock_items});}catch(e){setError(e instanceof Error?e.message:"Detail retur tidak dapat dimuat.");}}} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Terima & inspeksi</button>}{r.status==="refund_pending"&&<button onClick={()=>{const ref=window.prompt("Referensi refund dari provider yang sudah dieksekusi");if(ref?.trim())void mutate("/v1/admin/orders/"+r.order_id+"/mutations","record_refund",{return_id:r.id,provider_reference:ref.trim()})}} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Catat refund</button>}</div></article>)}</div>}
         </section>}
       </>}
       <p className="mt-6 text-xs text-slate-500">Transaksi berjalan melalui FastAPI dan RPC PostgreSQL ber-idempotensi. Provider pembayaran/logistik eksternal belum diaktifkan oleh Phase 07.</p>
