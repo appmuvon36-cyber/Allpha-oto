@@ -13,7 +13,7 @@ const asText = (value: unknown, fallback = "—") => typeof value === "string" |
 type Tab = "inventory" | "orders" | "payments" | "returns";
 
 const money = (value: unknown) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(Number(value ?? 0));
-const label: Record<string, string> = {
+const handoffLabel: Record<string, string> = { not_started: "Belum diminta", prepared: "Menunggu tindak lanjut", confirmed: "Dikonfirmasi staf", declined: "Ditolak staf", expired: "Kedaluwarsa" };\n\nconst label: Record<string, string> = {
   pending_payment: "Menunggu pembayaran", payment_review: "Review pembayaran", paid: "Dibayar",
   processing: "Diproses", shipped: "Dikirim", delivered: "Diterima", cancelled: "Dibatalkan",
   return_requested: "Permintaan retur", returned: "Diretur", partially_returned: "Retur sebagian",
@@ -99,6 +99,29 @@ export default function InventoryOrdersPage() {
     finally { setBusy(""); }
   }
 
+  async function reviewWhatsAppHandoff(orderId: string, action: "confirm" | "decline") {
+    let note: string | undefined;
+    if (action === "decline") {
+      const value = window.prompt("Alasan penolakan handoff WhatsApp (wajib):");
+      if (!value?.trim()) return;
+      note = value.trim();
+    }
+    if (!window.confirm(action === "confirm" ? "Konfirmasi bahwa tim menerima permintaan pesanan via WhatsApp?" : "Tolak permintaan handoff WhatsApp ini?")) return;
+    setBusy("whatsapp-" + action); setError(""); setNotice("");
+    try {
+      const response = await api("/v1/admin/orders/" + orderId + "/whatsapp-handoff", {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ action, note }),
+      });
+      const order = asRow(asRow(response.result).order);
+      const status = asText(order.whatsapp_handoff_status, action === "confirm" ? "confirmed" : "declined");
+      setNotice(status === "expired" ? "Handoff sudah kedaluwarsa; tidak dikonfirmasi." : action === "confirm" ? "Handoff WhatsApp dikonfirmasi staf." : "Handoff WhatsApp ditolak dan alasannya dicatat.");
+      await load();
+    } catch (e) { setError(e instanceof Error ? e.message : "Review handoff WhatsApp gagal."); }
+    finally { setBusy(""); }
+  }
+
   async function adjustStock(event: import("react").FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!productId.trim() || !reason.trim()) { setError("Product ID dan alasan mutasi wajib diisi."); return; }
@@ -160,11 +183,11 @@ export default function InventoryOrdersPage() {
           </div>
         </section>}
         {tab === "orders" && <section className="overflow-hidden rounded-2xl border bg-white"><div className="border-b p-4"><h2 className="font-semibold">Pesanan</h2><p className="text-sm text-slate-500">Stok dikonsumsi saat pengiriman dikonfirmasi; pembatalan sebelum diproses melepas reservasi.</p></div>
-          {orders.length===0?<p className="p-8 text-sm text-slate-500">Belum ada pesanan.</p>:<div className="divide-y">{orders.map(o=><article key={asText(o.id)} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="font-semibold">{asText(o.id)}</p><p className="text-sm text-slate-500">{new Date(String(o.created_at)).toLocaleString("id-ID")} · {label[asText(o.status,"")]??asText(o.status)}</p><p className="mt-1 font-semibold">{money(o.total_amount)}</p>{o.tracking_code&&<p className="text-sm">Resi: {asText(o.tracking_code)}</p>}</div><div className="flex flex-wrap gap-2">
+          {orders.length===0?<p className="p-8 text-sm text-slate-500">Belum ada pesanan.</p>:<div className="divide-y">{orders.map(o=><article key={asText(o.id)} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="font-semibold">{asText(o.id)}</p><p className="text-sm text-slate-500">{new Date(String(o.created_at)).toLocaleString("id-ID")} · {label[asText(o.status,"")]??asText(o.status)}</p><p className="mt-1 font-semibold">{money(o.total_amount)}</p><p className="mt-1 text-xs text-slate-600">Kanal: {asText(o.sales_channel,"web")==="whatsapp"?"WhatsApp":"Web"} · Handoff: {handoffLabel[asText(o.whatsapp_handoff_status,"not_started")]??asText(o.whatsapp_handoff_status)}</p>{o.whatsapp_handoff_expires_at&&<p className="text-xs text-slate-500">Batas handoff: {new Date(String(o.whatsapp_handoff_expires_at)).toLocaleString("id-ID")}</p>}{o.whatsapp_handoff_review_note&&<p className="text-xs text-slate-500">Catatan staf: {asText(o.whatsapp_handoff_review_note)}</p>}{o.tracking_code&&<p className="text-sm">Resi: {asText(o.tracking_code)}</p>}</div><div className="flex flex-wrap gap-2">
             {o.status==="payment_review"&&<span className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Menunggu verifikasi pembayaran</span>}
             {o.status==="paid"&&<button onClick={()=>void mutate("/v1/admin/orders/"+asText(o.id)+"/mutations","start_fulfillment")} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Mulai proses</button>}
             {o.status==="processing"&&<button onClick={()=>{const tracking=window.prompt("Masukkan nomor resi pengiriman");if(tracking?.trim())void mutate("/v1/admin/orders/"+asText(o.id)+"/mutations","mark_shipped",{tracking_code:tracking.trim()})}} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Tandai dikirim</button>}
-            {o.status==="shipped"&&<button onClick={()=>void mutate("/v1/admin/orders/"+asText(o.id)+"/mutations","mark_delivered")} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Tandai diterima</button>}
+            {o.status==="shipped"&&<button onClick={()=>void mutate("/v1/admin/orders/"+asText(o.id)+"/mutations","mark_delivered")} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Tandai diterima</button>}\n            {asText(o.whatsapp_handoff_status,"not_started")==="prepared"&&<><button disabled={busy.startsWith("whatsapp-")} onClick={()=>void reviewWhatsAppHandoff(asText(o.id),"confirm")} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Konfirmasi handoff</button><button disabled={busy.startsWith("whatsapp-")} onClick={()=>void reviewWhatsAppHandoff(asText(o.id),"decline")} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 disabled:opacity-50">Tolak handoff</button></>}
             {["pending_payment","payment_review"].includes(asText(o.status,""))&&<button onClick={()=>void mutate("/v1/admin/orders/"+asText(o.id)+"/mutations","cancel_order")} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700">Batalkan</button>}
           </div></article>)}</div>}
         </section>}
