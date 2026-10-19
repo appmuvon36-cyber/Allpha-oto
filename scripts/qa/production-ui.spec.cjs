@@ -58,8 +58,13 @@ test.describe("OtoClinic public production UI QA", () => {
     await page.setViewportSize({ width: 390, height: 900 });
     await page.goto(WEB, { waitUntil: "networkidle" });
     const search = page.getByRole("textbox", { name: /cari nama spare part/i });
-    await page.getByRole("button", { name: "Mesin", exact: true }).click();
-    await expect(search).toHaveValue("mesin");
+    const categoryRequest = page.waitForRequest(request => {
+      if (!request.url().includes("/v1/catalog/products")) return false;
+      return new URL(request.url()).searchParams.get("category") === "Mesin & Komponen Mesin";
+    });
+    await page.getByRole("button", { name: /Mesin & Komponen Mesin/ }).click();
+    await categoryRequest;
+    await expect(page.getByText("Kategori: Mesin & Komponen Mesin")).toBeVisible();
     await search.fill("qa-no-match-otoclinic");
     await expect(page.getByRole("heading", { name: /produk tidak ditemukan/i })).toBeVisible();
   });
