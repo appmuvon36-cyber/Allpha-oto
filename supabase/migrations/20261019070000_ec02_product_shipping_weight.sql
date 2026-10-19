@@ -8,8 +8,6 @@ begin
   end if;
 end $$;
 
-alter table public.oto_orders drop constraint if exists oto_orders_shipping_fee_unconfigured_check;
-
 -- Privileged weight update: only active catalog staff may set a positive package weight.
 create or replace function public.oto_product_set_shipping_weight(p_product_id uuid, p_weight_grams integer, p_request_id text)
 returns jsonb language plpgsql security definer set search_path to 'pg_catalog','public' as $function$
