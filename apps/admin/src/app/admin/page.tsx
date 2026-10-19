@@ -39,7 +39,6 @@ export default function AdminPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
-    setNotice("");
     if (!supabase) {
       setError("Environment autentikasi belum dikonfigurasi. Periksa konfigurasi Supabase pada deployment Admin.");
       setLoading(false);
