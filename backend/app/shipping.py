@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.main import require_active_profile, settings, supabase_get
+from app.main import require_active_profile, require_roles, require_supabase_configuration, settings, supabase_get
 
 router = APIRouter()
 
@@ -104,3 +105,37 @@ async def quote_shipping(request: ShippingQuoteRequest = Body(...), identity: di
     if not quotes:
         raise HTTPException(status_code=422, detail="Tidak ada layanan kurir untuk rute dan berat paket ini.")
     return {"origin": {"id": origin_id, "label": str(origin.get("label") or settings.rajaongkir_origin_address)}, "destination": {"id": request.destination_id, "label": str(dest_matches[0].get("label") or ""), "postal_code": str(dest_matches[0].get("zip_code") or ""), "city": str(dest_matches[0].get("city_name") or ""), "province": str(dest_matches[0].get("province_name") or "")}, "weight_grams": total_weight, "currency": "IDR", "expires_in_seconds": settings.rajaongkir_quote_ttl_seconds, "quotes": quotes}
+
+
+class ShippingWeightMutation(BaseModel):
+    weight_grams: int = Field(ge=1, le=1000000)
+
+    model_config = {"extra": "forbid"}
+
+@router.post("/v1/admin/catalog/products/{product_id}/shipping-weight", tags=["catalog"])
+async def set_product_shipping_weight(
+    product_id: UUID,
+    request: ShippingWeightMutation = Body(...),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor")),
+) -> dict[str, Any]:
+    supabase_url, anon_key = require_supabase_configuration()
+    headers = {"apikey": anon_key, "Authorization": "Bearer " + identity["_access_token"], "Content-Type": "application/json", "Accept": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            response = await client.post(supabase_url.rstrip("/") + "/rest/v1/rpc/oto_product_set_shipping_weight", headers=headers, json={"p_product_id": str(product_id), "p_weight_grams": request.weight_grams, "p_request_id": idempotency_key})
+        if response.status_code in (401, 403):
+            raise HTTPException(status_code=403, detail="Perubahan berat produk tidak diizinkan.")
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
+        if response.status_code == 429 or response.status_code >= 500:
+            raise HTTPException(status_code=503, detail="Layanan katalog sedang tidak tersedia.")
+        if response.status_code not in (200, 201):
+            raise HTTPException(status_code=422, detail="Berat produk tidak dapat disimpan.")
+        return {"result": response.json()}
+    except HTTPException:
+        raise
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail="Penyimpanan berat produk melewati batas waktu.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Tidak dapat menghubungi layanan katalog.") from exc
