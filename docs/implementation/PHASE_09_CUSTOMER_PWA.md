@@ -1,6 +1,6 @@
 # Phase 09 — Customer PWA
 
-Status: IMPLEMENTED IN SOURCE; CI, deployment, and production smoke verification pending.
+Status: CLOSED FOR FEATURE PROGRESSION — CI, API/Web deployment, and public smoke checks verified. Authenticated session/RLS/IDOR E2E remains Phase 12.
 
 ## Scope delivered
 - Public product detail endpoint `GET /v1/catalog/products/{product_id}`. It selects only published products and returns 404 for missing/unpublished records; Supabase public-read RLS remains the database boundary.
@@ -22,3 +22,14 @@ Status: IMPLEMENTED IN SOURCE; CI, deployment, and production smoke verification
 - API contract tests for product detail success, missing/unpublished product, and invalid UUID.
 - Web lint, TypeScript, build, backend contract suite, and existing Phase 05–08 database assertions in CI.
 - After CI passes, deploy the existing API and Customer Web services from canonical `main`, then smoke-test product detail route contract, unauthenticated private order access, PWA home/account/order routes, and confirm the live data baseline is unchanged.
+
+## Verified evidence — 19 October 2026
+
+- OtoClinic CI [#39185097017](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39185097017) completed successfully. Web lint/typecheck/build and API contract plus disposable PostgreSQL Phase 05–08 transactional assertions passed.
+- Phase 05 contract/build workflow [#39185067815](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39185067815) passed Web/Admin build/typecheck and the backend contract suite, including Phase 09 product-detail contracts.
+- Runtime commit: `609b4eaf848871640b0b6eb8571b0502b4901674`.
+- Railway API deployment `71ab3e3d-42af-4cdb-9700-106ff197f516` SUCCESS; Customer Web deployment `26218509-0f97-4280-b03f-2c48b2a4e919` SUCCESS. Existing service IDs and root directories were preserved; both services use the canonical repository and `main`.
+- Public HTTP smoke: `/`, `/account`, `/cart`, `/products/{id}`, and `/orders/{id}` returned HTTP 200. A non-existent product detail API returned 404; malformed product UUID returned 422; private `GET /v1/orders?limit=1` without bearer token returned 401; API `/health` returned 200.
+- Service worker `/sw.js` returned HTTP 200 and contains the `otoclinic-shell-v2` cache with explicit private-route exclusions.
+- Live row counts at verification: `products=0`, `product_fitments=0`, `vehicle_makes=0`, `vehicle_models=0`, `vehicle_variants=0`, `inventory_balances=0`, `shopping_carts=0`, `shopping_cart_items=0`, `oto_orders=0`, `oto_order_items=0`, `oto_payment_events=0`, `oto_returns=0`. No production test rows were inserted.
+- No database migration was needed. Real authenticated customer sessions and ownership/IDOR matrix remain reserved for Phase 12; this phase does not claim those tests passed.
