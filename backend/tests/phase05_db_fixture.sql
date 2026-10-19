@@ -131,3 +131,21 @@ end $$;
 create trigger phase05_fixture_audit_failure
 before insert on public.audit_logs
 for each row execute function public.phase05_fail_audit_for_test();
+
+
+-- Minimal existing-baseline inventory ledger for Phase 07 disposable tests.
+do $$ begin
+  create type public.oto_inventory_movement as enum ('receipt','sale','reservation','release','adjustment_increase','adjustment_decrease','return','write_off');
+exception when duplicate_object then null; end $$;
+create table if not exists public.inventory_ledger (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references public.products(id) on delete restrict,
+  supplier_id uuid references public.suppliers(id) on delete set null,
+  movement public.oto_inventory_movement not null,
+  quantity_delta integer not null,
+  reference_type text,
+  reference_id uuid,
+  reason text not null,
+  actor_user_id uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
