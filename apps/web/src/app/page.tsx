@@ -82,7 +82,7 @@ export default function HomePage() {
       <div className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5 sm:mb-4 sm:px-4">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-orange-50 text-[var(--color-primary)]"><ShieldCheck size={19}/></span>
-          <div className="min-w-0"><p className="truncate text-xs font-extrabold sm:text-sm">Sparepart tepat, kendaraan tetap sehat</p><p className="text-[10px] text-slate-500 sm:text-xs">Cari, cocokkan, lalu periksa informasi produk.</p></div>
+          <div className="min-w-0"><h1 className="truncate text-xs font-extrabold sm:text-sm">Spare part tepat, kendaraan tetap sehat</h1><p className="text-[10px] text-slate-500 sm:text-xs">Cari, cocokkan, lalu periksa informasi produk.</p></div>
         </div>
         <Link href="/cart" aria-label="Buka keranjang" className="relative grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 text-slate-700"><ShoppingCart size={19}/></Link>
       </div>
