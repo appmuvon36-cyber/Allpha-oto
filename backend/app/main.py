@@ -180,6 +180,30 @@ async def supabase_get(
 
 
 
+async def supabase_write(method: str, table: str, access_token: str, payload: dict[str, Any], filters: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    """Write a small allowlisted payload through PostgREST with the caller JWT; RLS remains authoritative."""
+    if method not in {"POST", "PATCH"} or table not in {"product_categories"}:
+        raise HTTPException(status_code=422, detail="Unsupported data mutation.")
+    supabase_url, anon_key = require_supabase_configuration()
+    headers = {"apikey": anon_key, "Authorization": f"Bearer {access_token}", "Content-Type": "application/json", "Accept": "application/json", "Prefer": "return=representation"}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.request(method, f"{supabase_url}/rest/v1/{table}", params=filters or {}, headers=headers, json=payload)
+        if response.status_code in (401, 403): raise HTTPException(status_code=403, detail="Category mutation is not permitted.")
+        if response.status_code == 409: raise HTTPException(status_code=409, detail="Category name, slug, or code already exists.")
+        if response.status_code == 429 or response.status_code >= 500: raise HTTPException(status_code=503, detail="Category service is temporarily unavailable.")
+        if response.status_code not in (200, 201, 204):
+            try: code = str(response.json().get("code", ""))
+            except (ValueError, AttributeError): code = ""
+            if code in {"23505", "23514", "23502", "22P02"}: raise HTTPException(status_code=422, detail="Category data failed validation.")
+            raise HTTPException(status_code=503, detail="Category mutation could not be completed.")
+        data = response.json() if response.content else []
+        return data if isinstance(data, list) else []
+    except HTTPException: raise
+    except httpx.TimeoutException as exc: raise HTTPException(status_code=503, detail="Category request timed out.") from exc
+    except httpx.HTTPError as exc: raise HTTPException(status_code=503, detail="Could not reach category service.") from exc
+
+
 async def supabase_count(
     table: str,
     params: dict[str, str],
@@ -680,6 +704,79 @@ async def mutate_catalog(
         idempotency_key, identity["_access_token"],
     )
     return {"result": result}
+
+
+class ProductCategoryCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    slug: str = Field(min_length=2, max_length=110, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    code: str = Field(min_length=2, max_length=6, pattern=r"^[A-Z0-9]{2,6}$")
+    parent_id: UUID | None = None
+    description: str | None = Field(default=None, max_length=500)
+    vehicle_scope: str = Field(default="all", pattern=r"^(all|motorcycle|car|commercial)$")
+    sort_order: int = Field(default=100, ge=0, le=10000)
+    model_config = {"extra": "forbid"}
+
+
+class ProductCategoryUpdate(BaseModel):
+    is_active: bool | None = None
+    description: str | None = Field(default=None, max_length=500)
+    sort_order: int | None = Field(default=None, ge=0, le=10000)
+    model_config = {"extra": "forbid"}
+
+
+@app.get("/v1/catalog/categories", tags=["catalog"])
+async def list_public_product_categories() -> dict[str, Any]:
+    rows = await supabase_get("product_categories", {"select": "id,parent_id,name,slug,code,description,vehicle_scope,sort_order,is_active", "is_active": "eq.true", "order": "sort_order.asc,name.asc", "limit": "500"})
+    return {"items": rows, "count": len(rows)}
+
+
+@app.get("/v1/admin/catalog/categories", tags=["catalog"])
+async def list_admin_product_categories(identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "moderator"))) -> dict[str, Any]:
+    rows = await supabase_get("product_categories", {"select": "id,parent_id,name,slug,code,description,vehicle_scope,sort_order,is_active,created_at,updated_at", "order": "sort_order.asc,name.asc", "limit": "500"}, access_token=identity["_access_token"])
+    return {"items": rows, "count": len(rows)}
+
+
+@app.post("/v1/admin/catalog/categories", tags=["catalog"], status_code=201)
+async def create_product_category(request: ProductCategoryCreate = Body(...), identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor"))) -> dict[str, Any]:
+    actor_id = (identity.get("user") or {}).get("id")
+    if not actor_id: raise HTTPException(status_code=401, detail="Authenticated user required.")
+    payload = request.model_dump(mode="json", exclude_none=True)
+    payload.update({"created_by": actor_id, "updated_by": actor_id})
+    rows = await supabase_write("POST", "product_categories", identity["_access_token"], payload)
+    if not rows: raise HTTPException(status_code=503, detail="Category was not returned after save.")
+    return {"category": rows[0]}
+
+
+@app.patch("/v1/admin/catalog/categories/{category_id}", tags=["catalog"])
+async def update_product_category(category_id: UUID, request: ProductCategoryUpdate = Body(...), identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor"))) -> dict[str, Any]:
+    if not request.model_fields_set: raise HTTPException(status_code=422, detail="Provide at least one category field to update.")
+    actor_id = (identity.get("user") or {}).get("id")
+    if not actor_id: raise HTTPException(status_code=401, detail="Authenticated user required.")
+    payload = request.model_dump(mode="json", exclude_unset=True)
+    payload["updated_by"] = actor_id
+    rows = await supabase_write("PATCH", "product_categories", identity["_access_token"], payload, {"id": f"eq.{category_id}"})
+    if not rows: raise HTTPException(status_code=404, detail="Category was not found or could not be updated.")
+    return {"category": rows[0]}
+
+
+@app.post("/v1/admin/catalog/sku/next", tags=["catalog"])
+async def next_product_sku(category_id: UUID = Body(..., embed=True), identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor"))) -> dict[str, Any]:
+    supabase_url, anon_key = require_supabase_configuration()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(f"{supabase_url}/rest/v1/rpc/oto_next_product_sku", headers={"apikey": anon_key, "Authorization": f"Bearer {identity['_access_token']}", "Content-Type": "application/json", "Accept": "application/json"}, json={"p_category_id": str(category_id)})
+        if response.status_code in (401, 403): raise HTTPException(status_code=403, detail="SKU generation is not permitted.")
+        if response.status_code == 429 or response.status_code >= 500: raise HTTPException(status_code=503, detail="SKU allocator is temporarily unavailable.")
+        if response.status_code != 200:
+            try: code = str(response.json().get("code", ""))
+            except (ValueError, AttributeError): code = ""
+            if code == "22023": raise HTTPException(status_code=409, detail="SKU capacity for this category has been reached.")
+            if code == "P0002": raise HTTPException(status_code=404, detail="Active category was not found.")
+            raise HTTPException(status_code=422, detail="SKU could not be generated for this category.")
+        return {"sku": response.json(), "capacity_per_category": 999999, "generation": "on-demand"}
+    except HTTPException: raise
+    except httpx.TimeoutException as exc: raise HTTPException(status_code=503, detail="SKU generation timed out.") from exc
+    except httpx.HTTPError as exc: raise HTTPException(status_code=503, detail="Could not reach SKU allocator.") from exc
 
 
 @app.get("/v1/admin/products", tags=["catalog"])
