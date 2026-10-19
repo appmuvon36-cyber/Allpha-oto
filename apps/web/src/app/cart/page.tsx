@@ -21,7 +21,8 @@ export default function CartPage(){
  const [items,setItems]=useState<CartItem[]>([]);
  const [orders,setOrders]=useState<Order[]>([]);
  const [loading,setLoading]=useState(true);
- const [busy,setBusy]=useState(false);\n const [whatsappBusyOrder,setWhatsappBusyOrder]=useState("");
+ const [busy,setBusy]=useState(false);
+ const [whatsappBusyOrder,setWhatsappBusyOrder]=useState("");
  const [error,setError]=useState("");
  const [notice,setNotice]=useState("");
  const [recipient,setRecipient]=useState("");
@@ -145,7 +146,18 @@ export default function CartPage(){
   finally{setBusy(false);}
  }
 
- async function continueViaWhatsApp(order:Order){\n  setWhatsappBusyOrder(order.id);setError("");setNotice("");\n  try{\n   const body=await request("/v1/orders/"+order.id+"/whatsapp-handoff",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:"{}"});\n   if(typeof body.whatsapp_url!=="string"||!body.whatsapp_url.startsWith("https://wa.me/"))throw new Error("Tautan WhatsApp tidak tersedia.");\n   setNotice(body.handoff_notice??"Tautan WhatsApp disiapkan; status pengiriman pesan belum diketahui.");\n   window.location.assign(body.whatsapp_url);\n  }catch(e){setError(e instanceof Error?e.message:"WhatsApp handoff belum dapat disiapkan.");}\n  finally{setWhatsappBusyOrder("");}\n }\n\n async function submitEvidence(order:Order){
+ async function continueViaWhatsApp(order:Order){
+  setWhatsappBusyOrder(order.id);setError("");setNotice("");
+  try{
+   const body=await request("/v1/orders/"+order.id+"/whatsapp-handoff",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:"{}"});
+   if(typeof body.whatsapp_url!=="string"||!body.whatsapp_url.startsWith("https://wa.me/"))throw new Error("Tautan WhatsApp tidak tersedia.");
+   setNotice(body.handoff_notice??"Tautan WhatsApp disiapkan; status pengiriman pesan belum diketahui.");
+   window.location.assign(body.whatsapp_url);
+  }catch(e){setError(e instanceof Error?e.message:"WhatsApp handoff belum dapat disiapkan.");}
+  finally{setWhatsappBusyOrder("");}
+ }
+
+ async function submitEvidence(order:Order){
   if(!evidence.trim()){setError("Isi referensi bukti transfer atau referensi provider.");return;}
   setBusy(true);setError("");setNotice("");
   try{
@@ -181,7 +193,8 @@ export default function CartPage(){
     <section className="overflow-hidden rounded-2xl border bg-white"><div className="border-b p-4"><h2 className="font-bold">Pesanan saya</h2><p className="text-xs text-slate-500">Status berasal dari sistem transaksi OtoClinic.</p></div>
     {orders.length===0?<p className="p-6 text-sm text-slate-500">Belum ada pesanan.</p>:<div className="divide-y">{orders.map(o=><article key={o.id} className="p-4"><div className="flex flex-col justify-between gap-2 sm:flex-row"><div><p className="break-all text-sm font-semibold">{o.id}</p><p className="mt-1 text-xs text-slate-500">{new Date(o.created_at).toLocaleString("id-ID")}</p></div><span className="h-fit w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold">{statuses[o.status]??o.status}</span></div><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><strong>{money(o.total_amount)}</strong>{o.tracking_code&&<span className="inline-flex items-center gap-1 text-sm text-slate-600"><Truck size={14}/> {o.tracking_code}</span>}</div>
       {o.status==="pending_payment"&&<div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={latestOrder?.id===o.id?evidence:""} onChange={e=>{setLatestOrder(o);setEvidence(e.target.value)}} placeholder="Referensi bukti transfer" className="min-w-0 flex-1 rounded-lg border p-2.5 text-sm"/><button disabled={busy||!(latestOrder?.id===o.id&&evidence.trim())} onClick={()=>void submitEvidence(o)} className="rounded-lg bg-orange-600 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-50">Kirim bukti</button><button disabled={busy} onClick={()=>void cancelOrder(o)} className="rounded-lg border px-3 py-2.5 text-sm font-semibold">Batalkan</button></div>}
-      {o.status==="payment_review"&&<p className="mt-3 text-xs text-amber-700">Bukti pembayaran sedang diperiksa. Jangan menganggap pesanan lunas sebelum status pembayaran diverifikasi.</p>}\n      {!["cancelled","delivered","returned","partially_returned"].includes(o.status)&&<div className="mt-3"><button type="button" disabled={!!whatsappBusyOrder} onClick={()=>void continueViaWhatsApp(o)} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-emerald-700 px-3 py-2 text-sm font-bold text-emerald-800 disabled:opacity-50"><MessageCircle size={16}/>{whatsappBusyOrder===o.id?"Menyiapkan WhatsApp…":"Lanjutkan pesanan via WhatsApp"}</button><p className="mt-1 text-xs text-slate-500">Referensi dan ringkasan diambil dari pesanan kanonis; pembayaran tetap mengikuti status OtoClinic.</p></div>}
+      {o.status==="payment_review"&&<p className="mt-3 text-xs text-amber-700">Bukti pembayaran sedang diperiksa. Jangan menganggap pesanan lunas sebelum status pembayaran diverifikasi.</p>}
+      {!["cancelled","delivered","returned","partially_returned"].includes(o.status)&&<div className="mt-3"><button type="button" disabled={!!whatsappBusyOrder} onClick={()=>void continueViaWhatsApp(o)} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-emerald-700 px-3 py-2 text-sm font-bold text-emerald-800 disabled:opacity-50"><MessageCircle size={16}/>{whatsappBusyOrder===o.id?"Menyiapkan WhatsApp…":"Lanjutkan pesanan via WhatsApp"}</button><p className="mt-1 text-xs text-slate-500">Referensi dan ringkasan diambil dari pesanan kanonis; pembayaran tetap mengikuti status OtoClinic.</p></div>}
     </article>)}</div>}</section>
    </section>
    <aside className="h-fit space-y-5">
