@@ -17,6 +17,8 @@ class Phase07ContractTests(unittest.TestCase):
         routes = {(method.upper(), path) for path, operations in app.openapi()["paths"].items() for method in operations}
         expected = {
             ("GET", "/v1/cart"),
+            ("GET", "/v1/shipping/destinations"),
+            ("POST", "/v1/shipping/quote"),
             ("POST", "/v1/cart/mutations"),
             ("POST", "/v1/checkout"),
             ("GET", "/v1/orders"),
@@ -34,6 +36,12 @@ class Phase07ContractTests(unittest.TestCase):
             ("POST", "/v1/admin/orders/{order_id}/mutations"),
         }
         self.assertTrue(expected.issubset(routes), f"Missing Phase 07 routes: {expected - routes}")
+
+    def test_shipping_routes_require_verified_bearer_identity(self):
+        response = self.client.get("/v1/shipping/destinations?search=16320")
+        self.assertEqual(response.status_code, 401)
+        response = self.client.post("/v1/shipping/quote", json={"destination_id": "1", "destination_search": "16320"})
+        self.assertEqual(response.status_code, 401)
 
     def test_checkout_requires_verified_bearer_identity(self):
         response = self.client.post(
