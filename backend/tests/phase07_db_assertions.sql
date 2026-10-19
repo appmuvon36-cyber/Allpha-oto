@@ -62,7 +62,7 @@ begin
   perform public.oto_order_mutate('receive_return',order_id,jsonb_build_object('return_id',return_id,'restock_items',jsonb_build_array(order_item_id)),'phase07-return-receive-001');
   result:=public.oto_order_mutate('record_refund',order_id,jsonb_build_object('return_id',return_id,'provider_reference','CI-REFUND-001'),'phase07-refund-record-001');
   if result#>>'{order,status}'<>'partially_returned' then raise exception 'phase07 partial refund order status mismatch'; end if;
-  if (select on_hand from public.inventory_balances where product_id=product_id)<>7 then raise exception 'phase07 inspected return did not restock selected item'; end if;
+  if (select b.on_hand from public.inventory_balances b where b.product_id='07000000-0000-4000-8000-000000000003'::uuid)<>7 then raise exception 'phase07 inspected return did not restock selected item'; end if;
   if not exists(select 1 from public.audit_logs where request_id='phase07-stock-receipt-001')
      or not exists(select 1 from public.audit_logs where request_id='phase07-checkout-0001')
      or not exists(select 1 from public.audit_logs where request_id='phase07-refund-record-001') then
