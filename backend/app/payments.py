@@ -145,12 +145,12 @@ async def create_payment_intent(
         raise HTTPException(status_code=422, detail="RajaOngkir Payment API requires a whole-IDR amount of at least Rp10.000.")
 
     existing = await supabase_get("oto_payment_intents", {
-        "select": "id,provider_order_id,provider_transaction_id,amount,status,redirect_url,token,expires_at",
+        "select": "id,provider_order_id,provider_transaction_id,amount,status,redirect_url,token,expires_at,payment_type,channel_code,payment_details",
         "order_id": f"eq.{order_id}", "provider": "eq.rajaongkir",
         "status": "eq.pending", "order": "created_at.desc", "limit": "1"
     }, token)
     if existing:
-        return {"intent": existing[0], "replayed": True, "provider": PROVIDER}
+        return {"intent": existing[0], "replayed": True, "provider": PROVIDER, "payment": existing[0].get("payment_details") or {}}
 
     provider_order_id = f"oto-{order_id.hex}-{hashlib.sha256(idempotency_key.encode()).hexdigest()[:10]}"
     address = order.get("shipping_address") if isinstance(order.get("shipping_address"), dict) else {}
@@ -175,6 +175,12 @@ async def create_payment_intent(
         item_details.append({"name": str(item.get("name_snapshot") or "Suku cadang")[:180], "quantity": quantity, "price": int(price)})
     if not item_details or sum(item["quantity"] * item["price"] for item in item_details) > int(amount):
         raise HTTPException(status_code=409, detail="Order item snapshots do not match the order total.")
+    item_subtotal = sum(item["quantity"] * item["price"] for item in item_details)
+    shipping_fee = int(amount) - item_subtotal
+    if shipping_fee < 0:
+        raise HTTPException(status_code=409, detail="Order item subtotal exceeds the payable order total.")
+    if shipping_fee > 0:
+        item_details.append({"name": "Ongkos kirim", "quantity": 1, "price": shipping_fee})
     payload = {
         "order_id": provider_order_id,
         "payment_type": request.payment_type,
@@ -212,7 +218,11 @@ async def create_payment_intent(
     rpc_body = {
         "p_order_id": str(order_id), "p_provider": PROVIDER, "p_provider_order_id": provider_order_id,
         "p_amount": str(amount), "p_redirect_url": str(payment_url) if payment_url else None,
-        "p_token": payment_id, "p_expires_at": expires_at
+        "p_token": payment_id, "p_expires_at": expires_at,
+        "p_payment_type": request.payment_type, "p_channel_code": request.channel_code,
+        "p_payment_details": {"payment_id": payment_id, "payment_type": request.payment_type, "channel_code": request.channel_code,
+                              "payment_url": payment_url, "va_number": va_number, "qr_value": qr_value, "expires_at": expires_at,
+                              "raw_status": _field(provider_result, "status", "payment_status")}
     }
     url = settings.supabase_url.rstrip("/")
     headers = {"apikey": settings.supabase_anon_key, "Authorization": f"Bearer {token}", "Content-Type": "application/json"}
