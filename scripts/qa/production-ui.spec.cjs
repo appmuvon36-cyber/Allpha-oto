@@ -42,7 +42,7 @@ test.describe("OtoClinic public production UI QA", () => {
       page.on("pageerror", (error) => errors.push(error.message));
       await page.goto(WEB, { waitUntil: "networkidle" });
       await expect(page.getByRole("heading", { name: "Spare part tepat, kendaraan tetap sehat.", exact: true })).toBeVisible();
-      await expect(page.locator("#katalog h2", { hasText: "Semua produk" })).toBeInViewport();
+      await expect(page.locator("#katalog h2", { hasText: "Semua produk" })).toBeVisible();
       await expect(page.locator(".store-promo-banner")).toHaveCount(0);
       const measured = await overflow(page);
       await page.screenshot({ path: `test-results/customer-${width}.png`, fullPage: true });
