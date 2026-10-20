@@ -105,9 +105,13 @@ begin
     v_event:='tracking_updated';
   end if;
 
-  insert into public.oto_fulfillment_events(order_id,actor_user_id,event_type,from_status,to_status,carrier,service,tracking_code,note,metadata)
-  values(r.id,a,v_event,v_from,r.status,coalesce(v_carrier,r.shipping_carrier),coalesce(v_service,r.shipping_service),coalesce(v_tracking,r.tracking_code),v_note,
-    jsonb_build_object('source','admin_fulfillment_rpc','exception_code',v_code));
+  -- Status transitions are captured by the order trigger. Write explicit events only
+  -- for actions that do not change status, avoiding duplicate shipped/delivered events.
+  if p_action in ('pack_order','record_exception','resolve_exception','update_tracking') then
+    insert into public.oto_fulfillment_events(order_id,actor_user_id,event_type,from_status,to_status,carrier,service,tracking_code,note,metadata)
+    values(r.id,a,v_event,v_from,r.status,coalesce(v_carrier,r.shipping_carrier),coalesce(v_service,r.shipping_service),coalesce(v_tracking,r.tracking_code),v_note,
+      jsonb_build_object('source','admin_fulfillment_rpc','exception_code',v_code));
+  end if;
   v_result:=jsonb_build_object('order',to_jsonb(r),'event_type',v_event,'replayed',false);
   insert into public.oto_idempotency_records(actor_user_id,request_id,action,target_id,payload_fingerprint,result)
   values(a,p_request_id,'fulfillment_'||p_action,r.id,v_fingerprint,v_result);
