@@ -19,10 +19,10 @@ begin
  where n.nspname='public' and p.proname='oto_coupon_preview'
  and pg_get_function_identity_arguments(p.oid)='p_code text, p_subtotal numeric';
  if d is null then raise exception 'Expected coupon preview RPC not found'; end if;
- old_total:='select count(*)             from public.oto_coupon_redemptions where coupon_id=c.id;';
- new_total:='select count(*)             from public.oto_coupon_redemptions cr join public.oto_orders co on co.id=cr.order_id where cr.coupon_id=c.id and co.status not in (''cancelled'',''expired'',''payment_expired'');';
- old_customer:='select count(*)             from public.oto_coupon_redemptions where coupon_id=c.id and customer_user_id=a;';
- new_customer:='select count(*)             from public.oto_coupon_redemptions cr join public.oto_orders co on co.id=cr.order_id where cr.coupon_id=c.id and cr.customer_user_id=a and co.status not in (''cancelled'',''expired'',''payment_expired'');';
+ old_total:='select count(*) into used_total from public.oto_coupon_redemptions where coupon_id=c.id;';
+ new_total:='select count(*) into used_total from public.oto_coupon_redemptions cr join public.oto_orders co on co.id=cr.order_id where cr.coupon_id=c.id and co.status not in (''cancelled'',''expired'',''payment_expired'');';
+ old_customer:='select count(*) into used_customer from public.oto_coupon_redemptions where coupon_id=c.id and customer_user_id=a;';
+ new_customer:='select count(*) into used_customer from public.oto_coupon_redemptions cr join public.oto_orders co on co.id=cr.order_id where cr.coupon_id=c.id and cr.customer_user_id=a and co.status not in (''cancelled'',''expired'',''payment_expired'');';
  if position(new_total in d)=0 then
   if position(old_total in d)=0 or position(old_customer in d)=0 then raise exception 'Coupon preview count statements did not match baseline'; end if;
   d:=replace(d,old_total,new_total); d:=replace(d,old_customer,new_customer); execute d;
