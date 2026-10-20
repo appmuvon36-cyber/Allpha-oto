@@ -1522,6 +1522,107 @@ async def supabase_admin_role_rpc(
         raise HTTPException(status_code=503, detail="Could not reach role service.") from exc
 
 
+async def supabase_admin_user_directory_rpc(
+    query: str | None,
+    role: str | None,
+    status: str,
+    limit: int,
+    offset: int,
+    access_token: str,
+) -> dict[str, Any]:
+    supabase_url, anon_key = require_supabase_configuration()
+    headers = {
+        "apikey": anon_key,
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                f"{supabase_url}/rest/v1/rpc/oto_admin_list_users",
+                headers=headers,
+                json={
+                    "p_query": query,
+                    "p_role": role,
+                    "p_status": status,
+                    "p_limit": limit,
+                    "p_offset": offset,
+                },
+            )
+        if response.status_code in (401, 403):
+            raise HTTPException(status_code=403, detail="User directory access is not permitted.")
+        if response.status_code == 429 or response.status_code >= 500:
+            raise HTTPException(status_code=503, detail="User directory service is temporarily unavailable.")
+        if response.status_code not in (200, 201):
+            body = response.json() if response.content else {}
+            message = str(body.get("message", "")) if isinstance(body, dict) else ""
+            if "admin_role_required" in message or "authentication_required" in message:
+                raise HTTPException(status_code=403, detail="An active administrator role is required.")
+            if "user_directory_pagination_invalid" in message or "user_directory_status_invalid" in message:
+                raise HTTPException(status_code=422, detail="User directory filters are invalid.")
+            raise HTTPException(status_code=422, detail="User directory query was rejected.")
+        payload = response.json()
+        if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+            raise HTTPException(status_code=503, detail="User directory returned an invalid response.")
+        return payload
+    except HTTPException:
+        raise
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail="User directory request timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Could not reach user directory service.") from exc
+
+
+async def supabase_admin_provision_user_profile_rpc(
+    target_user_id: UUID,
+    request_id: str,
+    access_token: str,
+) -> dict[str, Any]:
+    supabase_url, anon_key = require_supabase_configuration()
+    headers = {
+        "apikey": anon_key,
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                f"{supabase_url}/rest/v1/rpc/oto_admin_provision_user_profile",
+                headers=headers,
+                json={"p_target_user_id": str(target_user_id), "p_request_id": request_id},
+            )
+        if response.status_code in (401, 403):
+            raise HTTPException(status_code=403, detail="Profile provisioning is not permitted.")
+        if response.status_code == 429 or response.status_code >= 500:
+            raise HTTPException(status_code=503, detail="Profile provisioning service is temporarily unavailable.")
+        if response.status_code not in (200, 201):
+            body = response.json() if response.content else {}
+            message = str(body.get("message", "")) if isinstance(body, dict) else ""
+            if "auth_identity_not_found" in message:
+                raise HTTPException(status_code=404, detail="The Auth identity was not found.")
+            if "profile_already_exists" in message:
+                raise HTTPException(status_code=409, detail="This Auth identity already has a profile.")
+            if "request_id_reused_for_different_operation" in message:
+                raise HTTPException(status_code=409, detail="Idempotency key was already used for another request.")
+            if "profile_provision_payload_invalid" in message:
+                raise HTTPException(status_code=422, detail="Profile provisioning request is invalid.")
+            if "admin_role_required" in message or "authentication_required" in message:
+                raise HTTPException(status_code=403, detail="An active administrator role is required.")
+            raise HTTPException(status_code=422, detail="Profile provisioning was rejected by the database guard.")
+        payload = response.json()
+        if not isinstance(payload, dict) or not isinstance(payload.get("profile"), dict):
+            raise HTTPException(status_code=503, detail="Profile provisioning returned an invalid response.")
+        return payload
+    except HTTPException:
+        raise
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail="Profile provisioning request timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Could not reach profile provisioning service.") from exc
+
+
 @app.get("/v1/admin/overview", tags=["admin"])
 async def admin_overview(
     identity: dict[str, Any] = Depends(require_roles(
@@ -1583,27 +1684,41 @@ async def admin_overview(
 
 @app.get("/v1/admin/users", tags=["admin"])
 async def list_admin_users(
+    q: str | None = Query(default=None, max_length=80),
+    role: str | None = Query(default=None, max_length=32),
+    status: str = Query(default="all", max_length=24),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0, le=10000),
     identity: dict[str, Any] = Depends(require_roles("admin")),
 ) -> dict[str, Any]:
-    rows = await supabase_get(
-        "user_profiles",
-        {
-            "select": "id,display_name,role,is_active,created_at,updated_at",
-            "order": "created_at.desc",
-            "limit": str(limit),
-            "offset": str(offset),
-        },
-        access_token=identity["_access_token"],
-    )
-    return {
-        "items": rows,
-        "count": len(rows),
-        "limit": limit,
-        "offset": offset,
-        "next_offset": offset + limit if len(rows) == limit else None,
+    allowed_roles = {
+        "customer", "supplier", "catalog_editor", "inventory_manager",
+        "order_manager", "moderator", "admin",
     }
+    if role is not None and role not in allowed_roles:
+        raise HTTPException(status_code=422, detail="Role filter is not supported.")
+    if status not in {"all", "active", "inactive", "missing_profile"}:
+        raise HTTPException(status_code=422, detail="User status filter is not supported.")
+    return await supabase_admin_user_directory_rpc(
+        q.strip() if q and q.strip() else None,
+        role,
+        status,
+        limit,
+        offset,
+        identity["_access_token"],
+    )
+
+
+@app.post("/v1/admin/users/{user_id}/provision", tags=["admin"])
+async def provision_admin_user_profile(
+    user_id: UUID,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    identity: dict[str, Any] = Depends(require_roles("admin")),
+) -> dict[str, Any]:
+    result = await supabase_admin_provision_user_profile_rpc(
+        user_id, idempotency_key, identity["_access_token"]
+    )
+    return {"result": result}
 
 
 @app.post("/v1/admin/users/{user_id}/role", tags=["admin"])
