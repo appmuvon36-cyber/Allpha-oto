@@ -10,7 +10,7 @@ type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string
 type Row = { [key: string]: JsonValue };
 const asRow = (value: unknown): Row => typeof value === "object" && value !== null && !Array.isArray(value) ? value as Row : {};
 const asText = (value: unknown, fallback = "—") => typeof value === "string" || typeof value === "number" ? String(value) : fallback;
-type Tab = "inventory" | "orders" | "payments" | "returns";
+type Tab = "inventory" | "orders" | "fulfillment" | "payments" | "returns";
 
 const money = (value: unknown) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(Number(value ?? 0));
 const handoffLabel: Record<string, string> = { not_started: "Belum diminta", prepared: "Menunggu tindak lanjut", confirmed: "Dikonfirmasi staf", declined: "Ditolak staf", expired: "Kedaluwarsa" };
@@ -34,6 +34,10 @@ export default function InventoryOrdersPage() {
   const [orders, setOrders] = useState<Row[]>([]);
   const [payments, setPayments] = useState<Row[]>([]);
   const [returns, setReturns] = useState<Row[]>([]);
+  const [fulfillmentOrder, setFulfillmentOrder] = useState("");
+  const [carrier, setCarrier] = useState("");
+  const [service, setService] = useState("");
+  const [trackingCode, setTrackingCode] = useState("");
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [reason, setReason] = useState("");
@@ -159,7 +163,7 @@ export default function InventoryOrdersPage() {
 
   const tabs: { id: Tab; name: string; icon: typeof Boxes }[] = [
     { id: "inventory", name: "Inventori", icon: Boxes }, { id: "orders", name: "Pesanan", icon: Truck },
-    { id: "payments", name: "Pembayaran", icon: CreditCard }, { id: "returns", name: "Retur & Refund", icon: RotateCcw },
+    { id: "fulfillment", name: "Pengiriman", icon: Truck }, { id: "payments", name: "Pembayaran", icon: CreditCard }, { id: "returns", name: "Retur & Refund", icon: RotateCcw },
   ];
 
   return <main className="min-h-screen bg-slate-50 text-slate-900">
@@ -200,7 +204,25 @@ export default function InventoryOrdersPage() {
             {["pending_payment","payment_review"].includes(asText(o.status,""))&&<button onClick={()=>void mutate("/v1/admin/orders/"+asText(o.id)+"/mutations","cancel_order")} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700">Batalkan</button>}
           </div></article>)}</div>}
         </section>}
-        {tab === "payments" && <section className="overflow-hidden rounded-2xl border bg-white"><div className="border-b p-4"><h2 className="font-semibold">Verifikasi pembayaran</h2><p className="text-sm text-slate-500">Bukti transfer hanya bukti pengajuan. Verifikasi harus dilakukan personel berwenang.</p></div>
+        {tab === "fulfillment" && <section className="space-y-4">
+        <div className="rounded-2xl border bg-white p-4"><h2 className="font-semibold">Fulfillment & pengiriman</h2><p className="mt-1 text-sm text-slate-600">Pengiriman memerlukan pembayaran terverifikasi. Resi, kurir, layanan, dan kendala disimpan melalui API transaksional.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <label className="text-sm">Pesanan<select value={fulfillmentOrder} onChange={e=>setFulfillmentOrder(e.target.value)} className="mt-1 w-full rounded-lg border p-2"><option value="">Pilih pesanan</option>{orders.filter(o=>["paid","processing","shipped"].includes(asText(o.status))).map(o=><option key={asText(o.id)} value={asText(o.id)}>{asText(o.id)} · {label[asText(o.status)]??asText(o.status)}</option>)}</select></label>
+          <label className="text-sm">Kurir<input value={carrier} onChange={e=>setCarrier(e.target.value)} maxLength={80} className="mt-1 w-full rounded-lg border p-2" placeholder="Nama kurir"/></label>
+          <label className="text-sm">Layanan<input value={service} onChange={e=>setService(e.target.value)} maxLength={80} className="mt-1 w-full rounded-lg border p-2" placeholder="Layanan"/></label>
+          <label className="text-sm">Nomor resi<input value={trackingCode} onChange={e=>setTrackingCode(e.target.value)} maxLength={120} className="mt-1 w-full rounded-lg border p-2" placeholder="Nomor resi"/></label>
+        </div><div className="mt-4 flex flex-wrap gap-2">
+          <button disabled={!fulfillmentOrder} onClick={()=>void mutate("/v1/admin/orders/"+fulfillmentOrder+"/fulfillment","start_fulfillment")} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50">Mulai proses</button>
+          <button disabled={!fulfillmentOrder} onClick={()=>void mutate("/v1/admin/orders/"+fulfillmentOrder+"/fulfillment","pack_order")} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50">Tandai dikemas</button>
+          <button disabled={!fulfillmentOrder||!carrier.trim()||!service.trim()||!trackingCode.trim()} onClick={()=>void mutate("/v1/admin/orders/"+fulfillmentOrder+"/fulfillment","mark_shipped",{carrier:carrier.trim(),service:service.trim(),tracking_code:trackingCode.trim()})} className="rounded-lg bg-orange-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Catat resi & kirim</button>
+          <button disabled={!fulfillmentOrder} onClick={()=>void mutate("/v1/admin/orders/"+fulfillmentOrder+"/fulfillment","mark_delivered")} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50">Tandai diterima</button>
+          <button disabled={!fulfillmentOrder} onClick={()=>{const code=window.prompt("Kode kendala");const note=window.prompt("Catatan kendala");if(code?.trim()&&note?.trim())void mutate("/v1/admin/orders/"+fulfillmentOrder+"/fulfillment","record_exception",{exception_code:code.trim(),note:note.trim()})}} className="rounded-lg border border-amber-300 px-3 py-2 text-sm disabled:opacity-50">Catat kendala</button>
+          <button disabled={!fulfillmentOrder} onClick={()=>{const note=window.prompt("Catatan penyelesaian");if(note?.trim())void mutate("/v1/admin/orders/"+fulfillmentOrder+"/fulfillment","resolve_exception",{note:note.trim()})}} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50">Selesaikan kendala</button>
+        </div></div>
+        <div className="overflow-hidden rounded-2xl border bg-white"><div className="border-b p-4"><h3 className="font-semibold">Antrean pengiriman</h3></div>
+        {orders.filter(o=>["paid","processing","shipped"].includes(asText(o.status))).length===0?<p className="p-6 text-sm text-slate-500">Tidak ada pesanan yang menunggu fulfillment.</p>:<div className="divide-y">{orders.filter(o=>["paid","processing","shipped"].includes(asText(o.status))).map(o=><article key={asText(o.id)} className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between"><div><p className="font-semibold">{asText(o.id)}</p><p className="text-sm text-slate-600">{label[asText(o.status)]??asText(o.status)} · {money(o.total_amount)}</p><p className="text-sm text-slate-500">{asText(o.shipping_carrier,"Kurir belum dicatat")} · {asText(o.shipping_service,"Layanan belum dicatat")} · Resi {asText(o.tracking_code,"belum tersedia")}</p>{o.shipping_exception_note&&<p className="mt-1 text-sm text-amber-700">Kendala: {asText(o.shipping_exception_code)} — {asText(o.shipping_exception_note)}</p>}</div><button onClick={()=>setFulfillmentOrder(asText(o.id))} className="rounded-lg border px-3 py-2 text-sm">Kelola pengiriman</button></article>)}</div>}</div>
+      </section>}
+      {tab === "payments" && <section className="overflow-hidden rounded-2xl border bg-white"><div className="border-b p-4"><h2 className="font-semibold">Verifikasi pembayaran</h2><p className="text-sm text-slate-500">Bukti transfer hanya bukti pengajuan. Verifikasi harus dilakukan personel berwenang.</p></div>
           {payments.length===0?<p className="p-8 text-sm text-slate-500">Tidak ada pembayaran menunggu review.</p>:<div className="divide-y">{payments.map(p=><article key={asText(p.id)} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="font-semibold">Order {asText(p.order_id)}</p><p className="text-sm text-slate-500">Bukti: {asText(p.evidence_reference)} · {new Date(String(p.created_at)).toLocaleString("id-ID")}</p><p className="font-semibold">{money(p.amount)}</p></div><div className="flex flex-wrap gap-2"><button onClick={()=>{const ref=window.prompt("Nomor referensi bank/provider atau catatan verifikasi wajib");if(ref?.trim())void mutate("/v1/admin/orders/"+asText(p.order_id)+"/mutations","verify_payment",{payment_event_id:p.id,provider_reference:ref.trim()})}} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Verifikasi</button><button onClick={()=>{const reason=window.prompt("Alasan penolakan pembayaran");if(reason?.trim())void mutate("/v1/admin/orders/"+asText(p.order_id)+"/mutations","reject_payment",{payment_event_id:p.id,reason:reason.trim()})}} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700">Tolak</button></div></article>)}</div>}
         </section>}
         {tab === "returns" && <section className="overflow-hidden rounded-2xl border bg-white"><div className="border-b p-4"><h2 className="font-semibold">Retur dan refund</h2><p className="text-sm text-slate-500">Barang yang diterima tidak otomatis ditambahkan ke stok. Pilih item yang sudah diperiksa dan layak dijual saat penerimaan retur.</p></div>
