@@ -13,8 +13,7 @@ create table if not exists public.oto_payment_intents (
  token text,
  expires_at timestamptz,
  created_at timestamptz not null default now(),
- updated_at timestamptz not null default now(),
- unique(order_id, provider)
+ updated_at timestamptz not null default now()
 );
 create index if not exists oto_payment_intents_order_idx on public.oto_payment_intents(order_id, created_at desc);
 create table if not exists public.oto_payment_webhook_events (
@@ -81,7 +80,7 @@ begin
    update public.oto_orders set status='paid',updated_at=now() where id=o.id;
   elsif o.status not in ('paid','processing','shipped','delivered') then raise exception using errcode='22023',message='order_state_blocks_payment_settlement'; end if;
  end if;
- update public.oto_payment_intents set status=p_status,provider_transaction_id=coalesce(p_transaction_id,provider_transaction_id),updated_at=now() where id=pi.id;
+ update public.oto_payment_intents set status=case when p_status in ('refund','partial_refund') then 'refunded' else p_status end,provider_transaction_id=coalesce(p_transaction_id,provider_transaction_id),updated_at=now() where id=pi.id;
  insert into public.oto_payment_webhook_events(provider,provider_event_key,order_id,payment_intent_id,status,signature_valid,payload_digest,processed_at)
  values('midtrans',p_event_key,o.id,pi.id,p_status,true,p_payload_digest,now()) returning * into ev;
  insert into public.audit_logs(actor_user_id,action,entity_type,entity_id,request_id,details)
