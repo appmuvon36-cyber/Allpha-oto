@@ -795,16 +795,22 @@ async def reorder(order_id: UUID, idempotency_key: str = Header(..., alias="Idem
     if not items:
         raise HTTPException(status_code=422, detail="Order has no items to reorder.")
     added=[]; unavailable=[]
+    carts=await supabase_get("shopping_carts", {"select":"id","customer_user_id":f"eq.{identity['user']['id']}","limit":"1"}, identity["_access_token"])
+    existing={}
+    if carts:
+        existing_rows=await supabase_get("shopping_cart_items", {"select":"product_id,quantity","cart_id":f"eq.{carts[0]['id']}","limit":"100"}, identity["_access_token"])
+        existing={str(row["product_id"]):int(row["quantity"]) for row in existing_rows}
     for item in items:
         pid=str(item["product_id"]); qty=int(item["quantity"])
         product=await supabase_get("products", {"select":"id,status,retail_price", "id":f"eq.{pid}", "status":"eq.published", "limit":"1"}, identity["_access_token"])
         if not product or product[0].get("retail_price") is None:
             unavailable.append({"product_id":pid,"reason":"not_published"})
             continue
+        desired=min(100,qty+existing.get(pid,0))
         stock=await supabase_get("inventory_balances", {"select":"on_hand,reserved","product_id":f"eq.{pid}","limit":"1"}, identity["_access_token"])
-        if stock and int(stock[0].get("on_hand",0))-int(stock[0].get("reserved",0))<qty:
-            unavailable.append({"product_id":pid,"reason":"insufficient_stock"})
+        if not stock or int(stock[0].get("on_hand",0))-int(stock[0].get("reserved",0))<desired:
+            unavailable.append({"product_id":pid,"reason":"insufficient_or_unverified_stock"})
             continue
-        await order_rpc("cart_set_quantity", None, {"product_id":pid,"quantity":qty}, f"{idempotency_key[:80]}:{pid[:32]}", identity)
-        added.append({"product_id":pid,"quantity":qty})
+        await order_rpc("cart_set_quantity", None, {"product_id":pid,"quantity":desired}, f"{idempotency_key[:80]}:{pid[:32]}", identity)
+        added.append({"product_id":pid,"quantity":desired})
     return {"added":added,"unavailable":unavailable,"message":"Item yang tersedia dimasukkan ke keranjang; periksa harga dan stok terbaru sebelum checkout."}
