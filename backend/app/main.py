@@ -1784,3 +1784,6 @@ app.include_router(phase07_router)
 
 from app.shipping import router as shipping_router
 app.include_router(shipping_router)
+
+from app.payments import router as payments_router
+app.include_router(payments_router)
