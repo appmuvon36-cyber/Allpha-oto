@@ -30,6 +30,7 @@ export default function InventoryOrdersPage() {
   const [token, setToken] = useState("");
   const [role, setRole] = useState("");
   const [inventory, setInventory] = useState<Row[]>([]);
+  const [publishedProducts, setPublishedProducts] = useState<{id:string;sku:string|null;name:string;status:string}[]>([]);
   const [orders, setOrders] = useState<Row[]>([]);
   const [payments, setPayments] = useState<Row[]>([]);
   const [returns, setReturns] = useState<Row[]>([]);
@@ -66,6 +67,9 @@ export default function InventoryOrdersPage() {
     setRole(profile.role);
     const headers = { Authorization: "Bearer " + session.access_token };
     const canManageOrders = ["admin", "order_manager"].includes(profile.role ?? "");
+    const { data: catalogRows, error: catalogError } = await supabase.from("products").select("id,sku,name,status").eq("status", "published").order("name", { ascending: true }).limit(500);
+    if (catalogError) { setError("Katalog produk tayang tidak dapat dibaca untuk inventori: " + catalogError.message); setLoading(false); return; }
+    setPublishedProducts((catalogRows ?? []) as {id:string;sku:string|null;name:string;status:string}[]);
     const paths = [
       fetch(API + "/v1/admin/inventory?limit=100", { headers, cache: "no-store" }),
       canManageOrders ? fetch(API + "/v1/admin/orders?limit=100", { headers, cache: "no-store" }) : Promise.resolve(null),
@@ -126,7 +130,9 @@ export default function InventoryOrdersPage() {
 
   async function adjustStock(event: import("react").FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!productId.trim() || !reason.trim()) { setError("Product ID dan alasan mutasi wajib diisi."); return; }
+    if (!productId.trim() || !reason.trim()) { setError("Pilih produk katalog dan isi alasan mutasi."); return; }
+    if (!publishedProducts.some(p => p.id === productId)) { setError("Pilih produk yang benar-benar berstatus published."); return; }
+    if (!Number.isInteger(Number(quantity)) || Number(quantity) < 1 || Number(quantity) > 1000000) { setError("Kuantitas harus bilangan bulat 1–1.000.000."); return; }
     setBusy("inventory"); setError(""); setNotice("");
     try {
       await api("/v1/admin/inventory/mutations", {
@@ -174,7 +180,7 @@ export default function InventoryOrdersPage() {
         {tab === "inventory" && <section className="space-y-5">
           <div className="flex flex-col justify-between gap-3 rounded-xl border bg-white p-4 sm:flex-row sm:items-center"><div><p className="font-semibold">Reservasi kedaluwarsa</p><p className="text-xs text-slate-500">Batalkan pesanan belum dibayar yang melewati batas reservasi 30 menit.</p></div><button disabled={busy==="expire-reservations"} onClick={()=>void expireReservations()} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-50">Lepaskan reservasi kedaluwarsa</button></div>
           {["admin", "inventory_manager"].includes(role) && <form onSubmit={adjustStock} className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5">
-            <label className="text-sm font-medium">Product UUID<input required value={productId} onChange={e=>setProductId(e.target.value)} placeholder="UUID produk terbit" className="mt-1 w-full rounded-lg border p-2.5 font-normal"/></label>
+            <label className="text-sm font-medium">Produk katalog tayang<select required value={productId} onChange={e=>setProductId(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5 font-normal"><option value="">Pilih produk berdasarkan SKU / nama</option>{publishedProducts.map(p=><option key={p.id} value={p.id}>{p.sku ? p.sku+" · " : ""}{p.name}</option>)}</select><span className="mt-1 block text-xs font-normal text-slate-500">{publishedProducts.length} produk tayang. Stok tidak dibuat otomatis.</span></label>
             <label className="text-sm font-medium">Jenis mutasi<select value={movement} onChange={e=>setMovement(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5 font-normal"><option value="receipt">Penerimaan</option><option value="adjustment_increase">Penyesuaian +</option><option value="adjustment_decrease">Penyesuaian −</option><option value="write_off">Write-off</option></select></label>
             <label className="text-sm font-medium">Kuantitas<input required min="1" max="1000000" type="number" value={quantity} onChange={e=>setQuantity(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5 font-normal"/></label>
             <label className="text-sm font-medium">Alasan<input required value={reason} onChange={e=>setReason(e.target.value)} placeholder="Alasan dan bukti internal" className="mt-1 w-full rounded-lg border p-2.5 font-normal"/></label>
