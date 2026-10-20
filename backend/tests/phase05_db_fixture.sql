@@ -4,7 +4,7 @@ create schema if not exists auth;
 create schema if not exists storage;
 do $role$ begin create role anon nologin; exception when duplicate_object then null; end $role$;
 do $role$ begin create role authenticated nologin; exception when duplicate_object then null; end $role$;
-create table auth.users (id uuid primary key, email text);
+create table auth.users (id uuid primary key, email text, created_at timestamptz not null default now());
 create table storage.buckets (
   id text primary key, name text not null, public boolean not null default false,
   file_size_limit bigint, allowed_mime_types text[]
