@@ -45,9 +45,16 @@ export default function CatalogPage(){
  async function advanceLifecycle(product:Product){
   const nextAction=product.status==="draft"?"submit_review":product.status==="review"?"approve_product":product.status==="approved"?"publish_product":null;
   if(!nextAction)return;
-  if(nextAction==="submit_review"&&product.condition==="unknown"){
-   setLifecycleMessage({productId:product.id,kind:"error",text:"Kondisi produk masih “Belum diverifikasi”. Edit produk dan pilih kondisi yang benar-benar terkonfirmasi sebelum mengajukan review."});
-   return;
+  // Never trust the card's cached condition/status when submitting a review.
+  if(nextAction==="submit_review"){
+   if(!supabase){setLifecycleMessage({productId:product.id,kind:"error",text:"Tidak dapat memverifikasi kondisi: koneksi database Admin tidak tersedia. Review tidak dikirim."});return;}
+   const {data:currentProduct,error:readError}=await supabase.from("products").select("id,condition,status").eq("id",product.id).single();
+   if(readError){setLifecycleMessage({productId:product.id,kind:"error",text:"Gagal membaca kondisi terbaru dari database ("+readError.code+"): "+readError.message+". Review tidak dikirim."});return;}
+   if(!currentProduct){setLifecycleMessage({productId:product.id,kind:"error",text:"Produk tidak ditemukan saat verifikasi database. Review tidak dikirim."});return;}
+   if(currentProduct.status!=="draft"){setLifecycleMessage({productId:product.id,kind:"error",text:"Status produk di database sudah berubah menjadi "+currentProduct.status+". Muat ulang katalog sebelum melanjutkan."});await load();return;}
+   if(!currentProduct.condition||currentProduct.condition==="unknown"||!["new_oem","new_aftermarket","used","refurbished","remanufactured","damaged_for_parts"].includes(currentProduct.condition)){
+    setLifecycleMessage({productId:product.id,kind:"error",text:"Kondisi produk di database belum valid (nilai: "+String(currentProduct.condition??"kosong")+"). Edit produk, simpan kondisi yang benar-benar terkonfirmasi, lalu coba lagi. Review tidak dikirim."});return;
+   }
   }
   const labels:Record<string,string>={submit_review:"mengirim produk ke review",approve_product:"menyetujui produk",publish_product:"mempublikasikan produk"};
   if(nextAction==="publish_product"&&!window.confirm("Publikasikan produk ini ke Customer Web? Backend akan tetap menerapkan seluruh aturan katalog."))return;
@@ -57,7 +64,13 @@ export default function CatalogPage(){
    const response=await fetch("https://otoclinic-api-production.up.railway.app/v1/admin/catalog/mutations",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+accessToken,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({action:nextAction,product_id:product.id,payload:{}})});
    const body=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(typeof body.detail==="string"?body.detail:"Backend menolak aksi katalog ("+response.status+").");
-   setLifecycleMessage({productId:product.id,kind:"success",text:nextAction==="submit_review"?"Produk berhasil diajukan ke review.":nextAction==="approve_product"?"Produk berhasil disetujui.":"Produk berhasil dipublikasikan."});
+   if(nextAction==="submit_review"){
+    if(!supabase)throw new Error("Pengajuan diterima API, tetapi status database tidak dapat diverifikasi karena klien Supabase tidak tersedia.");
+    const {data:updatedProduct,error:statusReadError}=await supabase.from("products").select("id,condition,status").eq("id",product.id).single();
+    if(statusReadError)throw new Error("Pengajuan dikirim, tetapi status akhir tidak dapat dibaca dari database ("+statusReadError.code+"): "+statusReadError.message);
+    if(!updatedProduct||updatedProduct.status!=="review")throw new Error("API menerima permintaan, tetapi status database belum berubah menjadi review (status saat ini: "+String(updatedProduct?.status??"tidak ditemukan")+"). Muat ulang dan periksa audit sebelum mencoba lagi.");
+   }
+   setLifecycleMessage({productId:product.id,kind:"success",text:nextAction==="submit_review"?"Produk berhasil diajukan ke review dan status database terverifikasi: review.":nextAction==="approve_product"?"Produk berhasil disetujui.":"Produk berhasil dipublikasikan."});
    await load();
   }catch(e){setLifecycleMessage({productId:product.id,kind:"error",text:e instanceof Error?e.message:"Aksi katalog gagal."});}
   finally{setLifecycleBusyId("");}
