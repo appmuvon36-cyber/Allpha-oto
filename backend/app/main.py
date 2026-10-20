@@ -226,7 +226,7 @@ async def supabase_rpc(function: str, payload: dict[str, Any]) -> list[dict[str,
 
 async def supabase_write(method: str, table: str, access_token: str, payload: dict[str, Any], filters: dict[str, str] | None = None) -> list[dict[str, Any]]:
     """Write allowlisted payloads through PostgREST with the caller JWT; RLS remains authoritative."""
-    if method not in {"POST", "PATCH"} or table not in {"product_categories", "product_media", "sourcing_requests"}:
+    if method not in {"POST", "PATCH"} or table not in {"product_categories", "product_media", "sourcing_requests", "oto_coupons", "oto_wishlist_items", "oto_saved_vehicles", "oto_notifications"}:
         raise HTTPException(status_code=422, detail="Unsupported data mutation.")
     supabase_url, anon_key = require_supabase_configuration()
     headers = {"apikey": anon_key, "Authorization": f"Bearer {access_token}", "Content-Type": "application/json", "Accept": "application/json", "Prefer": "return=representation"}
