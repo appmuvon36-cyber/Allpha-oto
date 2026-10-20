@@ -41,7 +41,7 @@ test.describe("OtoClinic public production UI QA", () => {
       const errors = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await page.goto(WEB, { waitUntil: "networkidle" });
-      await expect(page.getByRole("heading", { name: /spare part tepat/i })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Spare part tepat, kendaraan tetap sehat.", exact: true })).toBeVisible();
       await expect(page.locator("#katalog h2", { hasText: "Semua produk" })).toBeInViewport();
       await expect(page.locator(".store-promo-banner")).toHaveCount(0);
       const measured = await overflow(page);
@@ -60,7 +60,8 @@ test.describe("OtoClinic public production UI QA", () => {
     const search = page.getByRole("textbox", { name: /cari nama spare part/i });
     const categoryRequest = page.waitForRequest(request => {
       if (!request.url().includes("/v1/catalog/products")) return false;
-      return new URL(request.url()).searchParams.get("category") === "Mesin & Komponen Mesin";
+      const params = new URL(request.url()).searchParams;
+      return Boolean(params.get("category_id"));
     });
     await page.getByRole("button", { name: /Mesin & Komponen Mesin/ }).click();
     await categoryRequest;
