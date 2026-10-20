@@ -57,8 +57,8 @@ async def create_payment_intent(
     if identity.get("role") != "customer":
         raise HTTPException(status_code=403, detail="Payment intents require an active customer account.")
     _provider_ready()
-    if settings.midtrans_environment == "production" and not settings.midtrans_client_key:
-        raise HTTPException(status_code=503, detail="Midtrans client key is missing from the server configuration.")
+    if not settings.midtrans_client_key:
+        raise HTTPException(status_code=503, detail="Online payment is not enabled: Midtrans client key is not configured.")
 
     token = identity["_access_token"]
     orders = await supabase_get(
@@ -165,7 +165,7 @@ async def create_payment_intent(
         raise
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="Payment intent could not be persisted.") from exc
-    return {"intent": result.get("intent", result), "replayed": bool(result.get("replayed", False)), "provider": "midtrans"}
+    return {"intent": result.get("intent", result), "replayed": bool(result.get("replayed", False)), "provider": "midtrans", "client_key": settings.midtrans_client_key, "environment": settings.midtrans_environment}
 
 
 @router.post("/v1/webhooks/midtrans", tags=["payment-webhooks"])
