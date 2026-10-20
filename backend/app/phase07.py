@@ -304,7 +304,7 @@ async def list_customer_orders(
 async def get_order(order_id: UUID, identity: dict[str, Any] = Depends(require_active_profile)) -> dict[str, Any]:
     rows = await supabase_get(
         "oto_orders",
-        {"select": "id,customer_user_id,status,subtotal,shipping_fee,total_amount,currency,shipping_address,tracking_code,sales_channel,whatsapp_handoff_status,whatsapp_handoff_prepared_at,whatsapp_handoff_expires_at,whatsapp_handoff_reviewed_at,whatsapp_handoff_review_note,shipped_at,delivered_at,cancelled_at,created_at,updated_at",
+        {"select": "id,customer_user_id,status,subtotal,shipping_fee,total_amount,currency,shipping_address,tracking_code,shipping_carrier,shipping_service,shipping_exception_code,shipping_exception_note,shipping_last_event_at,sales_channel,whatsapp_handoff_status,whatsapp_handoff_prepared_at,whatsapp_handoff_expires_at,whatsapp_handoff_reviewed_at,whatsapp_handoff_review_note,shipped_at,delivered_at,cancelled_at,created_at,updated_at",
          "id": f"eq.{order_id}", "limit": "1"},
         identity["_access_token"],
     )
@@ -314,7 +314,8 @@ async def get_order(order_id: UUID, identity: dict[str, Any] = Depends(require_a
     items = await supabase_get("oto_order_items", {"select": "id,product_id,sku_snapshot,name_snapshot,condition_snapshot,unit_price,quantity,line_total", "order_id": f"eq.{order_id}", "limit": "100"}, identity["_access_token"])
     payments = await supabase_get("oto_payment_events", {"select": "id,event_type,amount,method,provider_reference,status,review_note,reviewed_at,created_at", "order_id": f"eq.{order_id}", "order": "created_at.desc", "limit": "50"}, identity["_access_token"])
     returns = await supabase_get("oto_returns", {"select": "id,status,reason,requested_refund,refund_provider_reference,created_at,updated_at", "order_id": f"eq.{order_id}", "limit": "10"}, identity["_access_token"])
-    return {"order": order, "items": items, "payments": payments, "returns": returns}
+    fulfillment = await supabase_get("oto_fulfillment_events", {"select": "id,event_type,from_status,to_status,carrier,service,tracking_code,note,created_at", "order_id": f"eq.{order_id}", "order": "created_at.desc", "limit": "100"}, identity["_access_token"])
+    return {"order": order, "items": items, "payments": payments, "returns": returns, "fulfillment_events": list(reversed(fulfillment))}
 
 
 @router.post("/v1/orders/{order_id}/whatsapp-handoff", tags=["orders"])
@@ -534,7 +535,7 @@ async def list_admin_orders(
     allowed = {"pending_payment","payment_review","paid","processing","shipped","delivered","cancelled","return_requested","returned","partially_returned"}
     if status and status not in allowed:
         raise HTTPException(status_code=422, detail="Order status filter is invalid.")
-    params = {"select": "id,customer_user_id,status,subtotal,shipping_fee,total_amount,currency,tracking_code,sales_channel,whatsapp_handoff_status,whatsapp_handoff_prepared_at,whatsapp_handoff_expires_at,whatsapp_handoff_reviewed_at,whatsapp_handoff_review_note,created_at,updated_at",
+    params = {"select": "id,customer_user_id,status,subtotal,shipping_fee,total_amount,currency,tracking_code,shipping_carrier,shipping_service,shipping_exception_code,shipping_exception_note,shipping_last_event_at,sales_channel,whatsapp_handoff_status,whatsapp_handoff_prepared_at,whatsapp_handoff_expires_at,whatsapp_handoff_reviewed_at,whatsapp_handoff_review_note,created_at,updated_at",
               "order": "created_at.desc", "limit": str(limit), "offset": str(offset)}
     if status:
         params["status"] = f"eq.{status}"
@@ -591,6 +592,24 @@ async def mutate_order(
     if len(str(mutation.payload)) > 20000:
         raise HTTPException(status_code=413, detail="Order payload is too large.")
     return {"result": await order_rpc(mutation.action, order_id, mutation.payload, idempotency_key, identity)}
+
+
+@router.post("/v1/admin/orders/{order_id}/fulfillment", tags=["fulfillment"])
+async def mutate_fulfillment(
+    order_id: UUID,
+    mutation: OrderMutation = Body(...),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    identity: dict[str, Any] = Depends(require_roles("admin", "order_manager")),
+) -> dict[str, Any]:
+    allowed = {"start_fulfillment", "pack_order", "mark_shipped", "mark_delivered", "record_exception", "resolve_exception", "update_tracking"}
+    if mutation.action not in allowed:
+        raise HTTPException(status_code=422, detail="Unsupported fulfillment operation.")
+    if len(str(mutation.payload)) > 10000:
+        raise HTTPException(status_code=413, detail="Fulfillment payload is too large.")
+    return {"result": await phase07_rpc("oto_fulfillment_mutate", {
+        "p_order_id": str(order_id), "p_action": mutation.action,
+        "p_payload": mutation.payload, "p_request_id": idempotency_key,
+    }, identity["_access_token"])}
 
 
 @router.post("/v1/admin/inventory/expire-reservations", tags=["inventory"])
