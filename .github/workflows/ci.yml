@@ -146,6 +146,10 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019010200_phase08_admin_role_management.sql
       - name: Verify Phase 08 role change, audit and idempotency
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/phase08_db_assertions.sql
+      - name: Apply Phase 08 user directory and profile provisioning migration
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261020064000_phase08_user_directory_provisioning.sql
+      - name: Verify Auth user directory, profile provisioning and audit
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/phase08_user_directory_assertions.sql
       - name: Apply unknown-condition draft support
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019170000_catalog_unknown_condition_draft.sql
