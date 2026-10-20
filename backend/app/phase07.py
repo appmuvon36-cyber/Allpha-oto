@@ -18,6 +18,7 @@ from app.main import (
     require_roles,
     require_supabase_configuration,
     supabase_get,
+    supabase_write,
     settings,
 )
 
@@ -55,6 +56,7 @@ class CheckoutRequest(BaseModel):
     # Cart contents and shipping fee are validated server-side.
     shipping_address: ShippingAddress
     shipping_quote: ShippingQuoteSelection | None = None
+    coupon_code: str | None = Field(default=None, min_length=3, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
 
     model_config = {"extra": "forbid"}
 
@@ -78,7 +80,7 @@ class WhatsAppHandoffMutation(BaseModel):
 
 
 async def phase07_rpc(function_name: str, body: dict[str, Any], token: str) -> Any:
-    if function_name not in {"oto_inventory_mutate", "oto_order_mutate", "oto_expire_reservations", "oto_order_whatsapp_handoff"}:
+    if function_name not in {"oto_inventory_mutate", "oto_order_mutate", "oto_expire_reservations", "oto_order_whatsapp_handoff", "oto_coupon_preview"}:
         raise HTTPException(status_code=422, detail="Unsupported transaction operation.")
     url, anon_key = require_supabase_configuration()
     headers = {
@@ -281,6 +283,7 @@ async def checkout(
         "shipping_address": shipping_address_snapshot,
         "shipping_fee": str(server_shipping_fee),
         "shipping_quote": {**quote_snapshot, "signature": signature},
+        "coupon_code": request.coupon_code.strip().upper() if request.coupon_code else None,
     }, idempotency_key, identity)
     return {"result": result}
 
@@ -623,3 +626,185 @@ async def expire_inventory_reservations(
         identity["_access_token"],
     )
     return {"result": result}
+
+
+# EC-06 — customer lifecycle and commercial rules
+class SavedVehicleCreate(BaseModel):
+    nickname: str = Field(min_length=1, max_length=80)
+    make_id: UUID | None = None
+    model_id: UUID | None = None
+    variant_id: UUID | None = None
+    model_year: int | None = Field(default=None, ge=1950, le=2100)
+    plate_label: str | None = Field(default=None, max_length=30)
+    notes: str | None = Field(default=None, max_length=500)
+    model_config = {"extra": "forbid"}
+
+
+class CouponCreate(BaseModel):
+    code: str = Field(min_length=3, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+    description: str | None = Field(default=None, max_length=500)
+    discount_type: str = Field(pattern=r"^(fixed|percent)$")
+    discount_value: Decimal = Field(gt=0, le=100000000)
+    max_discount: Decimal | None = Field(default=None, gt=0)
+    minimum_subtotal: Decimal = Field(default=Decimal("0"), ge=0)
+    starts_at: datetime
+    ends_at: datetime | None = None
+    usage_limit: int | None = Field(default=None, ge=1, le=10000000)
+    per_customer_limit: int = Field(default=1, ge=1, le=100000)
+    is_active: bool = False
+    is_public: bool = False
+    model_config = {"extra": "forbid"}
+
+
+class CouponPreview(BaseModel):
+    code: str = Field(min_length=3, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+    subtotal: Decimal = Field(ge=0, le=100000000000)
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/v1/coupons/preview", tags=["commercial"])
+async def preview_coupon(request: CouponPreview, identity: dict[str, Any] = Depends(require_roles("customer"))) -> dict[str, Any]:
+    result = await phase07_rpc("oto_coupon_preview", {"p_code": request.code.strip().upper(), "p_subtotal": str(request.subtotal)}, identity["_access_token"])
+    return {"coupon": result}
+
+
+@router.get("/v1/admin/coupons", tags=["commercial"])
+async def admin_list_coupons(identity: dict[str, Any] = Depends(require_roles("admin", "order_manager"))) -> dict[str, Any]:
+    rows = await supabase_get("oto_coupons", {"select": "id,code,description,discount_type,discount_value,max_discount,minimum_subtotal,starts_at,ends_at,usage_limit,per_customer_limit,is_active,is_public,created_at,updated_at", "order": "created_at.desc", "limit": "200"}, identity["_access_token"])
+    return {"items": rows, "count": len(rows)}
+
+
+@router.post("/v1/admin/coupons", tags=["commercial"], status_code=201)
+async def admin_create_coupon(request: CouponCreate, identity: dict[str, Any] = Depends(require_roles("admin", "order_manager"))) -> dict[str, Any]:
+    payload = request.model_dump(mode="json")
+    payload["code"] = request.code.strip().upper()
+    payload["created_by"] = identity["user"]["id"]
+    rows = await supabase_write("POST", "oto_coupons", identity["_access_token"], payload)
+    if not rows:
+        raise HTTPException(status_code=503, detail="Coupon could not be saved.")
+    return {"coupon": rows[0]}
+
+
+@router.patch("/v1/admin/coupons/{coupon_id}", tags=["commercial"])
+async def admin_update_coupon(coupon_id: UUID, request: dict[str, Any] = Body(...), identity: dict[str, Any] = Depends(require_roles("admin", "order_manager"))) -> dict[str, Any]:
+    allowed = {"description", "discount_type", "discount_value", "max_discount", "minimum_subtotal", "starts_at", "ends_at", "usage_limit", "per_customer_limit", "is_active", "is_public"}
+    if not request or set(request) - allowed:
+        raise HTTPException(status_code=422, detail="Unsupported coupon fields.")
+    if "discount_type" in request and request["discount_type"] not in {"fixed", "percent"}:
+        raise HTTPException(status_code=422, detail="Invalid discount type.")
+    payload = dict(request)
+    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+    rows = await supabase_write("PATCH", "oto_coupons", identity["_access_token"], payload, {"id": f"eq.{coupon_id}"})
+    if not rows:
+        raise HTTPException(status_code=404, detail="Coupon not found.")
+    return {"coupon": rows[0]}
+
+
+@router.get("/v1/wishlist", tags=["customer-lifecycle"])
+async def list_wishlist(identity: dict[str, Any] = Depends(require_roles("customer"))) -> dict[str, Any]:
+    rows = await supabase_get("oto_wishlist_items", {"select": "id,product_id,created_at,products(id,sku,name,brand,part_number,condition,retail_price,currency,status)", "customer_user_id": f"eq.{identity['user']['id']}", "order": "created_at.desc", "limit": "200"}, identity["_access_token"])
+    return {"items": [r for r in rows if (r.get("products") or {}).get("status") == "published"], "count": len(rows)}
+
+
+@router.post("/v1/wishlist/{product_id}", tags=["customer-lifecycle"], status_code=201)
+async def add_wishlist(product_id: UUID, identity: dict[str, Any] = Depends(require_roles("customer"))) -> dict[str, Any]:
+    product = await supabase_get("products", {"select": "id,status", "id": f"eq.{product_id}", "status": "eq.published", "limit": "1"}, identity["_access_token"])
+    if not product:
+        raise HTTPException(status_code=404, detail="Published product not found.")
+    try:
+        rows = await supabase_write("POST", "oto_wishlist_items", identity["_access_token"], {"customer_user_id": identity["user"]["id"], "product_id": str(product_id)})
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        rows = await supabase_get("oto_wishlist_items", {"select": "id,product_id,created_at", "customer_user_id": f"eq.{identity['user']['id']}", "product_id": f"eq.{product_id}", "limit": "1"}, identity["_access_token"])
+        return {"item": rows[0] if rows else None, "replayed": True}
+    return {"item": rows[0] if rows else None, "replayed": False}
+
+
+@router.delete("/v1/wishlist/{product_id}", tags=["customer-lifecycle"])
+async def remove_wishlist(product_id: UUID, identity: dict[str, Any] = Depends(require_roles("customer"))) -> dict[str, Any]:
+    url, anon_key = require_supabase_configuration()
+    headers = {"apikey": anon_key, "Authorization": f"Bearer {identity['_access_token']}", "Prefer": "return=minimal"}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.delete(f"{url}/rest/v1/oto_wishlist_items", params={"customer_user_id": f"eq.{identity['user']['id']}", "product_id": f"eq.{product_id}"}, headers=headers)
+    if response.status_code not in (200, 204):
+        raise HTTPException(status_code=503, detail="Wishlist update failed.")
+    return {"removed": True}
+
+
+@router.get("/v1/saved-vehicles", tags=["customer-lifecycle"])
+async def list_saved_vehicles(identity: dict[str, Any] = Depends(require_roles("customer"))) -> dict[str, Any]:
+    rows = await supabase_get("oto_saved_vehicles", {"select": "id,nickname,make_id,model_id,variant_id,model_year,plate_label,notes,created_at,updated_at", "customer_user_id": f"eq.{identity['user']['id']}", "order": "created_at.desc", "limit": "100"}, identity["_access_token"])
+    return {"items": rows, "count": len(rows)}
+
+
+@router.post("/v1/saved-vehicles", tags=["customer-lifecycle"], status_code=201)
+async def create_saved_vehicle(request: SavedVehicleCreate, identity: dict[str, Any] = Depends(require_roles("customer"))) -> dict[str, Any]:
+    if not any((request.make_id, request.model_id, request.variant_id)):
+        raise HTTPException(status_code=422, detail="Pilih minimal merek, model, atau varian kendaraan.")
+    rows = await supabase_write("POST", "oto_saved_vehicles", identity["_access_token"], {**request.model_dump(mode="json"), "customer_user_id": identity["user"]["id"]})
+    if not rows:
+        raise HTTPException(status_code=503, detail="Saved vehicle could not be saved.")
+    return {"vehicle": rows[0]}
+
+
+@router.patch("/v1/saved-vehicles/{vehicle_id}", tags=["customer-lifecycle"])
+async def update_saved_vehicle(vehicle_id: UUID, request: SavedVehicleCreate, identity: dict[str, Any] = Depends(require_roles("customer"))) -> dict[str, Any]:
+    payload = request.model_dump(mode="json")
+    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+    rows = await supabase_write("PATCH", "oto_saved_vehicles", identity["_access_token"], payload, {"id": f"eq.{vehicle_id}", "customer_user_id": f"eq.{identity['user']['id']}"})
+    if not rows:
+        raise HTTPException(status_code=404, detail="Saved vehicle not found.")
+    return {"vehicle": rows[0]}
+
+
+@router.delete("/v1/saved-vehicles/{vehicle_id}", tags=["customer-lifecycle"])
+async def delete_saved_vehicle(vehicle_id: UUID, identity: dict[str, Any] = Depends(require_roles("customer"))) -> dict[str, Any]:
+    url, anon_key = require_supabase_configuration()
+    headers = {"apikey": anon_key, "Authorization": f"Bearer {identity['_access_token']}", "Prefer": "return=minimal"}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.delete(f"{url}/rest/v1/oto_saved_vehicles", params={"id": f"eq.{vehicle_id}", "customer_user_id": f"eq.{identity['user']['id']}"}, headers=headers)
+    if response.status_code not in (200, 204):
+        raise HTTPException(status_code=503, detail="Saved vehicle update failed.")
+    return {"deleted": True}
+
+
+@router.get("/v1/notifications", tags=["customer-lifecycle"])
+async def list_notifications(unread_only: bool = Query(default=False), identity: dict[str, Any] = Depends(require_active_profile)) -> dict[str, Any]:
+    params = {"select": "id,event_type,title,body,resource_type,resource_id,read_at,created_at", "customer_user_id": f"eq.{identity['user']['id']}", "order": "created_at.desc", "limit": "100"}
+    if unread_only:
+        params["read_at"] = "is.null"
+    rows = await supabase_get("oto_notifications", params, identity["_access_token"])
+    return {"items": rows, "unread_count": sum(1 for r in rows if r.get("read_at") is None)}
+
+
+@router.post("/v1/notifications/{notification_id}/read", tags=["customer-lifecycle"])
+async def mark_notification_read(notification_id: UUID, identity: dict[str, Any] = Depends(require_active_profile)) -> dict[str, Any]:
+    rows = await supabase_write("PATCH", "oto_notifications", identity["_access_token"], {"read_at": datetime.now(timezone.utc).isoformat()}, {"id": f"eq.{notification_id}", "customer_user_id": f"eq.{identity['user']['id']}"})
+    if not rows:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    return {"notification": rows[0]}
+
+
+@router.post("/v1/orders/{order_id}/reorder", tags=["customer-lifecycle"])
+async def reorder(order_id: UUID, idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128), identity: dict[str, Any] = Depends(require_roles("customer"))) -> dict[str, Any]:
+    orders = await supabase_get("oto_orders", {"select": "id,customer_user_id", "id": f"eq.{order_id}", "customer_user_id": f"eq.{identity['user']['id']}", "limit": "1"}, identity["_access_token"])
+    if not orders:
+        raise HTTPException(status_code=404, detail="Order not found.")
+    items = await supabase_get("oto_order_items", {"select": "product_id,quantity", "order_id": f"eq.{order_id}", "limit": "100"}, identity["_access_token"])
+    if not items:
+        raise HTTPException(status_code=422, detail="Order has no items to reorder.")
+    added=[]; unavailable=[]
+    for item in items:
+        pid=str(item["product_id"]); qty=int(item["quantity"])
+        product=await supabase_get("products", {"select":"id,status,retail_price", "id":f"eq.{pid}", "status":"eq.published", "limit":"1"}, identity["_access_token"])
+        if not product or product[0].get("retail_price") is None:
+            unavailable.append({"product_id":pid,"reason":"not_published"})
+            continue
+        stock=await supabase_get("inventory_balances", {"select":"on_hand,reserved","product_id":f"eq.{pid}","limit":"1"}, identity["_access_token"])
+        if stock and int(stock[0].get("on_hand",0))-int(stock[0].get("reserved",0))<qty:
+            unavailable.append({"product_id":pid,"reason":"insufficient_stock"})
+            continue
+        await order_rpc("cart_set_quantity", None, {"product_id":pid,"quantity":qty}, f"{idempotency_key[:80]}:{pid[:32]}", identity)
+        added.append({"product_id":pid,"quantity":qty})
+    return {"added":added,"unavailable":unavailable,"message":"Item yang tersedia dimasukkan ke keranjang; periksa harga dan stok terbaru sebelum checkout."}
