@@ -97,16 +97,22 @@ async def create_payment_intent(
          "order_id": f"eq.{order_id}", "order": "created_at.asc", "limit": "50"},
         token,
     )
+    item_details = [
+        {"id": str(item.get("sku_snapshot") or f"item-{i+1}")[:50],
+         "name": str(item.get("name_snapshot") or "Suku cadang")[:50],
+         "quantity": int(item["quantity"]),
+         "price": int(Decimal(str(item["unit_price"]))),
+        } for i, item in enumerate(item_rows)
+    ]
+    shipping_fee = Decimal(str(order.get("shipping_fee") or 0))
+    if shipping_fee > 0:
+        item_details.append({"id": "shipping", "name": "Ongkos kirim", "quantity": 1, "price": int(shipping_fee)})
+    if sum(int(x["price"]) * int(x["quantity"]) for x in item_details) != int(amount):
+        raise HTTPException(status_code=409, detail="Order item and shipping snapshots do not match the total; payment intent was not created.")
     payload: dict[str, Any] = {
         "transaction_details": {"order_id": provider_order_id, "gross_amount": int(amount)},
         "customer_details": customer_details,
-        "item_details": [
-            {"id": str(item.get("sku_snapshot") or f"item-{i+1}")[:50],
-             "name": str(item.get("name_snapshot") or "Suku cadang")[:50],
-             "quantity": int(item["quantity"]),
-             "price": int(Decimal(str(item["unit_price"]))),
-            } for i, item in enumerate(item_rows)
-        ],
+        "item_details": item_details,
         "expiry": {"unit": "minute", "duration": 30},
     }
     if not payload["item_details"]:
