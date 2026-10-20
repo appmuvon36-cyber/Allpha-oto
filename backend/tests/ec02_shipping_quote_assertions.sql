@@ -134,9 +134,9 @@ BEGIN
   UPDATE public.products
      SET status = 'published', retail_price = 1000, weight_grams = 250
    WHERE id = product_id;
-  INSERT INTO public.inventory_balances(product_id, on_hand)
+  INSERT INTO public.inventory_balances AS balance_row(product_id, on_hand)
   VALUES (product_id, 10)
-  ON CONFLICT (product_id) DO UPDATE SET on_hand = greatest(public.inventory_balances.on_hand, 10);
+  ON CONFLICT DO UPDATE SET on_hand = greatest(balance_row.on_hand, 10);
 
   quoted_at := to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"+00:00"');
   quote_json := jsonb_build_object(
