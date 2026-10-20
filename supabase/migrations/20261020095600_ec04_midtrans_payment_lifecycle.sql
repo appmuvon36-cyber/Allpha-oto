@@ -65,14 +65,14 @@ create or replace function public.oto_payment_webhook_apply(
 declare pi public.oto_payment_intents%rowtype; o public.oto_orders%rowtype; ev public.oto_payment_webhook_events%rowtype;
 begin
  if auth.role() <> 'service_role' then raise exception using errcode='42501',message='service_role_required'; end if;
- if p_event_key is null or length(p_event_key)>200 or p_provider_order_id is null or p_status not in ('pending','capture','settlement','deny','cancel','expire','failure','refund','partial_refund') then raise exception using errcode='22023',message='webhook_fields_invalid'; end if;
+ if p_event_key is null or length(p_event_key)>200 or p_provider_order_id is null or p_status not in ('pending','challenge','capture','settlement','deny','cancel','expire','failure','refund','partial_refund') then raise exception using errcode='22023',message='webhook_fields_invalid'; end if;
  perform pg_advisory_xact_lock(hashtextextended('midtrans:'||p_event_key,0));
  select * into ev from public.oto_payment_webhook_events where provider='midtrans' and provider_event_key=p_event_key for update;
  if found then return jsonb_build_object('replayed',true,'event_id',ev.id,'status',ev.status); end if;
  select * into pi from public.oto_payment_intents where provider='midtrans' and provider_order_id=p_provider_order_id for update;
  if not found then raise exception using errcode='P0002',message='payment_intent_not_found'; end if;
  select * into o from public.oto_orders where id=pi.order_id for update;
- if p_amount is distinct from pi.amount or p_amount is distinct from o.total_amount then raise exception using errcode='23514',message='payment_amount_mismatch'; end if;
+ if p_status not in ('refund','partial_refund') and (p_amount is distinct from pi.amount or p_amount is distinct from o.total_amount) then raise exception using errcode='23514',message='payment_amount_mismatch'; end if;
  if p_status in ('capture','settlement') then
   if o.status='pending_payment' then
    insert into public.oto_payment_events(order_id,event_type,amount,method,provider_reference,status,review_note,reviewed_at)
