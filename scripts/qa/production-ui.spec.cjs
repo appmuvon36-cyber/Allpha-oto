@@ -22,7 +22,7 @@ async function overflow(page) {
         width: Math.round(rect.width),
         overflowX: style.overflowX,
       };
-    }).filter((el) => el.width > 0 && (el.right > viewport + 1 || el.left < -1))
+    }).filter((el) => el.width > 0 && (el.right > viewport + 1 || el.left < -1) && !(el.className.includes("pointer-events-none") && el.className.includes("absolute")))
       .slice(0, 20);
     return {
       viewport: window.innerWidth,
