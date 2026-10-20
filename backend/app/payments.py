@@ -39,6 +39,10 @@ def _midtrans_base() -> str:
 def _provider_ready() -> None:
     if not settings.midtrans_server_key:
         raise HTTPException(status_code=503, detail="Online payment is not enabled: Midtrans server credentials are not configured.")
+
+
+def _webhook_ready() -> None:
+    _provider_ready()
     if not settings.supabase_service_role_key:
         raise HTTPException(status_code=503, detail="Payment webhook processing is not enabled: server-side database credential is not configured.")
 
@@ -166,7 +170,7 @@ async def create_payment_intent(
 
 @router.post("/v1/webhooks/midtrans", tags=["payment-webhooks"])
 async def midtrans_webhook(request: Request) -> dict[str, Any]:
-    _provider_ready()
+    _webhook_ready()
     try:
         payload = await request.json()
     except (ValueError, json.JSONDecodeError) as exc:
