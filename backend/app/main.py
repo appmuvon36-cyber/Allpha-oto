@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     rajaongkir_quote_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     # International WhatsApp Business number (digits with country code, e.g. 62...).
     whatsapp_business_phone: str = ""
+    # Midtrans remains disabled until real credentials and webhook URL are configured.
+    midtrans_server_key: str = ""
+    midtrans_client_key: str = ""
+    midtrans_environment: str = "sandbox"
+    supabase_service_role_key: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
