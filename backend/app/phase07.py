@@ -342,25 +342,75 @@ async def prepare_whatsapp_handoff(
         raise HTTPException(status_code=409, detail="Referensi pesanan WhatsApp tidak dapat disiapkan.")
     items = await supabase_get(
         "oto_order_items",
-        {"select": "sku_snapshot,name_snapshot,quantity,unit_price,line_total", "order_id": f"eq.{order_id}", "limit": "50"},
+        {"select": "product_id,sku_snapshot,name_snapshot,condition_snapshot,quantity,unit_price,line_total", "order_id": f"eq.{order_id}", "limit": "50"},
         identity["_access_token"],
     )
     if not items:
         raise HTTPException(status_code=409, detail="Rincian pesanan tidak tersedia untuk handoff.")
-    summary = "\n".join(
-        f"- {str(item.get('name_snapshot') or 'Produk')} (SKU {str(item.get('sku_snapshot') or '-')}) x {int(item.get('quantity') or 0)}"
-        for item in items
-    )
+
+    # Enrich the canonical order-item snapshots with the published catalog details
+    # that customers see on the product page. Price/quantity/totals remain from the order.
+    product_ids = sorted({str(item.get("product_id")) for item in items if item.get("product_id")})
+    product_rows: list[dict[str, Any]] = []
+    if product_ids:
+        product_rows = await supabase_get(
+            "products",
+            {
+                "select": "id,description,brand,part_number,category,package_quantity,warranty_days",
+                "id": "in.(" + ",".join(product_ids) + ")",
+                "status": "eq.published",
+                "limit": "50",
+            },
+            identity["_access_token"],
+        )
+    products_by_id = {str(product.get("id")): product for product in product_rows}
+
+    def format_idr(value: Any) -> str:
+        return "Rp" + f"{int(Decimal(str(value or 0))):,}".replace(",", ".")
+
+    detail_lines: list[str] = []
+    for item in items:
+        product = products_by_id.get(str(item.get("product_id")), {})
+        name = str(item.get("name_snapshot") or "Produk")
+        sku = str(item.get("sku_snapshot") or "-")
+        quantity = int(item.get("quantity") or 0)
+        detail_lines.append(f"- {name}")
+        detail_lines.append(f"  SKU: {sku}")
+        if product.get("part_number"):
+            detail_lines.append(f"  Nomor part: {str(product['part_number'])[:120]}")
+        if product.get("brand"):
+            detail_lines.append(f"  Merek: {str(product['brand'])[:120]}")
+        if item.get("condition_snapshot"):
+            detail_lines.append(f"  Kondisi: {str(item['condition_snapshot'])}")
+        description = " ".join(str(product.get("description") or "").split())
+        if description:
+            detail_lines.append(f"  Deskripsi: {description[:500]}")
+        if product.get("category"):
+            detail_lines.append(f"  Kategori: {str(product['category'])[:120]}")
+        if product.get("package_quantity") is not None:
+            detail_lines.append(f"  Isi kemasan: {int(product['package_quantity'])} unit")
+        if product.get("warranty_days") is not None:
+            warranty_days = int(product["warranty_days"])
+            detail_lines.append(f"  Garansi: {str(warranty_days) + ' hari' if warranty_days > 0 else 'belum dicantumkan'}")
+        detail_lines.append(f"  Jumlah: {quantity}")
+        detail_lines.append(f"  Harga satuan: {format_idr(item.get('unit_price'))}")
+        detail_lines.append(f"  Total item: {format_idr(item.get('line_total'))}")
+
     message = "\n".join([
-        "Halo OtoClinic, saya ingin menindaklanjuti pesanan yang sudah tercatat.",
+        "Halo OtoClinic, saya ingin menindaklanjuti pesanan yang sudah tercatat di website.",
         f"Referensi pesanan: {order_id}",
+        f"Tanggal pesanan: {str(order.get('created_at') or '-')}",
         f"Status pesanan: {str(order.get('status') or 'pending_payment')}",
-        "Rincian:",
-        summary,
-        f"Subtotal: Rp{int(Decimal(str(order.get('subtotal') or 0))):,}".replace(",", "."),
-        f"Ongkir tercatat: Rp{int(Decimal(str(order.get('shipping_fee') or 0))):,}".replace(",", "."),
-        f"Total tercatat: Rp{int(Decimal(str(order.get('total_amount') or 0))):,}".replace(",", "."),
-        "Catatan: status pembayaran tetap mengikuti sistem OtoClinic, bukan pesan WhatsApp.",
+        "",
+        "DETAIL PRODUK:",
+        *detail_lines,
+        "",
+        f"Subtotal: {format_idr(order.get('subtotal'))}",
+        f"Ongkir tercatat: {format_idr(order.get('shipping_fee'))}",
+        f"TOTAL PESANAN: {format_idr(order.get('total_amount'))}",
+        "",
+        "Mohon konfirmasi ketersediaan barang, informasi pembayaran, dan estimasi pengiriman.",
+        "Catatan: pesan ini bukan bukti pembayaran. Status pembayaran tetap mengikuti sistem OtoClinic.",
     ])
     return {
         "result": result,
