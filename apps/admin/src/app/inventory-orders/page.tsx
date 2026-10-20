@@ -170,7 +170,7 @@ export default function InventoryOrdersPage() {
     <header className="border-b border-slate-200 bg-white">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
         <div className="flex items-center gap-3"><Link href="/admin" className="rounded-lg border p-2" aria-label="Kembali"><ArrowLeft size={18}/></Link><div><p className="text-xs font-semibold uppercase tracking-wide text-orange-600">OtoClinic · Operasional</p><h1 className="text-xl font-bold sm:text-2xl">Inventory & Order Lifecycle</h1></div></div>
-        <button onClick={() => void load()} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold hover:bg-slate-50" disabled={loading}><RefreshCw size={16}/> Refresh</button>
+        <div className="flex items-center gap-2"><Link href="/coupons" className="inline-flex items-center gap-2 rounded-lg border border-orange-200 px-3 py-2 text-sm font-semibold text-orange-700 hover:bg-orange-50">Kupon & promo</Link><button onClick={() => void load()} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold hover:bg-slate-50" disabled={loading}><RefreshCw size={16}/> Refresh</button></div>
       </div>
     </header>
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
