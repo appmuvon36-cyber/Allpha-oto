@@ -75,20 +75,31 @@ test.describe("OtoClinic public production UI QA", () => {
     const categorySection = page.locator("#kategori");
     const categoryButtons = categorySection.locator("button.store-category-tile");
     await expect(categorySection).toBeVisible();
+    await expect(categorySection.getByText("Memuat kategori dari katalog…")).toBeHidden({ timeout: 15000 }).catch(() => {});
     if (await categoryButtons.count()) {
+      const firstCategory = categoryButtons.first();
+      await expect(firstCategory.locator("span").filter({ hasText: /^ID:/ })).toBeVisible();
+      await expect(firstCategory.getByText(/^Urutan:/)).toBeVisible();
       const categoryRequest = page.waitForRequest(request => {
         if (!request.url().includes("/v1/catalog/products")) return false;
         return Boolean(new URL(request.url()).searchParams.get("category_id"));
       });
-      await categoryButtons.first().click();
-      await categoryRequest;
-      await expect(categorySection.getByText("Kategori terpilih")).toBeVisible();
+      const expectedCategoryId = await firstCategory.locator("span").filter({ hasText: /^ID:/ }).innerText();
+      await firstCategory.click();
+      const request = await categoryRequest;
+      expect(new URL(request.url()).searchParams.get("category_id")).toBe(expectedCategoryId.replace(/^ID:\\s*/, ""));
+      await expect(categorySection.getByText("Hierarki kategori terpilih")).toBeVisible();
+      await expect(categorySection.getByText(/ID:/).first()).toBeVisible();
     } else {
-      // Taxonomy may legitimately be empty or the backend may report a loading/error state.
-      // Assert the user receives a clear state; never seed fake categories for the test.
-      const emptyState = categorySection.getByText("Belum ada kategori aktif.");
-      const errorState = categorySection.getByRole("status");
+      // Empty taxonomy and backend failures are different states. Neither path may seed fake categories.
+      const emptyState = categorySection.getByText("Belum ada kategori aktif di master katalog.");
+      const errorState = categorySection.getByRole("alert");
       await expect(emptyState.or(errorState).first()).toBeVisible({ timeout: 15000 });
+      if (await errorState.count()) {
+        await expect(errorState).toContainText("Kategori gagal dimuat dari backend");
+      } else {
+        await expect(emptyState).toBeVisible();
+      }
     }
     await search.fill("qa-no-match-otoclinic");
     await expect(page.getByRole("heading", { name: /produk tidak ditemukan|belum ada produk/i })).toBeVisible({ timeout: 15000 });
