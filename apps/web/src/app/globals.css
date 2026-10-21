@@ -466,3 +466,33 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
  .store-home .store-category-tile > span:first-child { width:48px !important;height:48px !important; }
  .store-home .store-category-tile .category-tile-name { font-size:11px; }
 }
+
+
+/* Reference-driven mobile layout: prevent intrinsic flex children from widening the viewport. */
+@media (max-width: 767px) {
+  .store-home > #kendaraan-aktif,
+  .store-home > #kategori,
+  .store-home > #katalog,
+  .store-home > #permintaan,
+  .store-home > section[aria-label="Hero OtoClinic"] {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+  }
+  #kendaraan-aktif > button {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  #kendaraan-aktif > button > span:first-child,
+  #kendaraan-aktif > button > span:first-child > span {
+    min-width: 0;
+  }
+  .store-home .store-promo-banner > div:last-child img {
+    max-width: 100%;
+    transform: none;
+  }
+}
