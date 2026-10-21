@@ -2303,6 +2303,17 @@ async def get_storefront_homepage() -> dict[str, Any]:
             continue
         else:
             rows = []
+        if rows and key not in {"advertisements"}:
+            product_ids = [str(row.get("id")) for row in rows if row.get("id")]
+            if product_ids:
+                try:
+                    media_by_product = await public_product_media(product_ids)
+                    for row in rows:
+                        media = media_by_product.get(str(row.get("id")), [])
+                        row["images"] = media
+                        row["image_url"] = next((item.get("url") for item in media if item.get("is_primary")), media[0].get("url") if media else None)
+                except HTTPException:
+                    pass
         products[key] = rows
     return {"sections": sections, "items": products, "generated_at": now, "data_policy":"only published products, confirmed sales, recorded search events and active campaigns; no synthetic metrics"}
 
