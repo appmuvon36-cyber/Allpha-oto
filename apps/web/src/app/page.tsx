@@ -63,7 +63,7 @@ export default function HomePage() {
       .then(d=>{
         if(!active)return;
         const items=Array.isArray(d.items)?d.items:[];
-        setCategories(items.slice().sort((a,b)=>(a.sort_order??0)-(b.sort_order??0)||a.name.localeCompare(b.name,"id")));
+        setCategories(items.slice().sort((a:Category,b:Category)=>(a.sort_order??0)-(b.sort_order??0)||a.name.localeCompare(b.name,"id")));
         setCategoryError("");
       })
       .catch(()=>{if(active){setCategories([]);setCategoryError("Kategori gagal dimuat dari backend. Periksa koneksi lalu coba lagi.");}})
