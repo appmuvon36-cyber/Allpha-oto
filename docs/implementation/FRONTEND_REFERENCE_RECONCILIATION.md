@@ -49,3 +49,5 @@ Complete Phase 09 UI/UX QA gate: inspect CI results, verify the exact deployed c
 - Preserved the existing `PwaInstallPrompt` implementation and its placement in the header; no PWA install logic was removed or replaced.
 - Bumped the existing service-worker shell cache to v3 and added the local splash image to the app shell for offline startup after installation/cache refresh.
 - CI run for the preceding UI commit passed web and admin builds/typechecks and backend contract tests. This new asset/splash commit must complete its own CI run; production deployment and 360/390/820/1440 viewport QA remain pending.
+
+- Follow-up robustness fix: the intro marks the session as seen only when it closes or is skipped, so React Strict Mode's setup/cleanup cycle cannot strand the overlay on screen.

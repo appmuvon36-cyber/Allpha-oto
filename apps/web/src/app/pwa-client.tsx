@@ -10,23 +10,36 @@ return <div className="pwa-install-wrap"><button className="pwa-install-button" 
 
 
 
+
 /** Short, once-per-tab intro using the approved OtoClinic splash artwork. */
 export function PwaSplashIntro(){
   const [visible,setVisible]=useState(false);
   const [closing,setClosing]=useState(false);
   useEffect(()=>{
+    let closeTimer:ReturnType<typeof setTimeout>|undefined;
+    let hideTimer:ReturnType<typeof setTimeout>|undefined;
     try{
       if(window.sessionStorage.getItem("otoclinic-splash-seen")==="1")return;
-      window.sessionStorage.setItem("otoclinic-splash-seen","1");
       setVisible(true);
-      const closeTimer=window.setTimeout(()=>setClosing(true),1450);
-      const hideTimer=window.setTimeout(()=>setVisible(false),1800);
-      return ()=>{window.clearTimeout(closeTimer);window.clearTimeout(hideTimer)};
+      closeTimer=window.setTimeout(()=>setClosing(true),1450);
+      hideTimer=window.setTimeout(()=>{
+        try{window.sessionStorage.setItem("otoclinic-splash-seen","1")}catch{}
+        setVisible(false);
+      },1800);
     }catch{
       setVisible(false);
     }
+    return ()=>{
+      if(closeTimer)window.clearTimeout(closeTimer);
+      if(hideTimer)window.clearTimeout(hideTimer);
+    };
   },[]);
   if(!visible)return null;
+  const dismiss=()=>{
+    try{window.sessionStorage.setItem("otoclinic-splash-seen","1")}catch{}
+    setClosing(false);
+    setVisible(false);
+  };
   return <div className={"pwa-splash-intro"+(closing?" is-closing":"")} role="status" aria-label="Memuat OtoClinic">
     <div className="pwa-splash-orbit pwa-splash-orbit-one" aria-hidden="true"/>
     <div className="pwa-splash-orbit pwa-splash-orbit-two" aria-hidden="true"/>
@@ -36,6 +49,6 @@ export function PwaSplashIntro(){
     <strong className="pwa-splash-brand">OtoClinic</strong>
     <span className="pwa-splash-tagline">Spare part otomotif</span>
     <div className="pwa-splash-progress" aria-hidden="true"><span/></div>
-    <button type="button" className="pwa-splash-skip" onClick={()=>setVisible(false)}>Lewati</button>
+    <button type="button" className="pwa-splash-skip" onClick={dismiss}>Lewati</button>
   </div>;
 }
