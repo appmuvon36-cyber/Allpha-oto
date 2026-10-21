@@ -10,7 +10,7 @@ from urllib.parse import quote, urlsplit
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Body
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
@@ -220,7 +220,7 @@ async def supabase_get(
 
 async def supabase_rpc(function: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
     """Call an explicitly allowlisted public, read-only RPC using the anon key."""
-    if function not in {"oto_public_stock_status", "oto_public_product_categories", "oto_public_homepage_best_sellers", "oto_public_homepage_popular"}:
+    if function not in {"oto_public_stock_status", "oto_public_product_categories", "oto_public_homepage_best_sellers", "oto_public_homepage_popular", "oto_record_product_search_events"}:
         raise HTTPException(status_code=422, detail="Unsupported public RPC.")
     supabase_url, anon_key = require_supabase_configuration()
     headers = {"apikey": anon_key, "Authorization": f"Bearer {anon_key}", "Content-Type": "application/json", "Accept": "application/json"}
@@ -243,22 +243,20 @@ async def supabase_rpc(function: str, payload: dict[str, Any]) -> list[dict[str,
         raise HTTPException(status_code=503, detail="Could not reach public catalog availability.") from exc
 
 
-async def record_product_search_events(query: str, product_ids: list[str]) -> None:
-    """Record only products returned by a real search; service credentials never leave the API."""
-    if not settings.supabase_service_role_key or not product_ids:
-        return
-    supabase_url = settings.supabase_url.rstrip("/")
-    if not supabase_url:
+async def record_product_search_events(query: str, product_ids: list[str], client_hash: str) -> None:
+    """Record real search result impressions through a rate-limited, published-product-only RPC."""
+    if not product_ids:
         return
     normalized = re.sub(r"[^a-z0-9]+", " ", query.casefold()).strip()[:100]
     if len(normalized) < 2:
         return
-    payload = [{"normalized_query": normalized, "product_id": product_id} for product_id in list(dict.fromkeys(product_ids))[:20]]
-    headers = {"apikey": settings.supabase_service_role_key, "Authorization": f"Bearer {settings.supabase_service_role_key}", "Content-Type": "application/json", "Prefer": "return=minimal"}
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(f"{supabase_url}/rest/v1/oto_product_search_events", headers=headers, json=payload)
-    except httpx.HTTPError:
+        await supabase_rpc("oto_record_product_search_events", {
+            "p_query": normalized,
+            "p_product_ids": list(dict.fromkeys(product_ids))[:20],
+            "p_client_hash": client_hash,
+        })
+    except HTTPException:
         # Search remains available if optional analytics logging is temporarily unavailable.
         return
 
@@ -425,6 +423,7 @@ def _cross_reference_matches_product(
 
 @app.get("/v1/search/parts", tags=["search"])
 async def search_part_candidates(
+    request: Request,
     q: str = Query(min_length=2, max_length=100),
     limit: int = Query(default=10, ge=1, le=20),
     vehicle_variant_id: UUID | None = Query(default=None),
@@ -576,7 +575,9 @@ async def search_part_candidates(
     ))
     candidates = ranked[:limit]
     candidate_ids = [str(item["product"].get("id")) for item in candidates if item["product"].get("id")]
-    await record_product_search_events(q, candidate_ids)
+    client_material = (request.client.host if request.client else "unknown") + "|" + request.headers.get("user-agent", "")[:300]
+    client_hash = hashlib.sha256(client_material.encode("utf-8")).hexdigest()
+    await record_product_search_events(q, candidate_ids, client_hash)
     try:
         media_by_product = await public_product_media(candidate_ids)
     except HTTPException:
