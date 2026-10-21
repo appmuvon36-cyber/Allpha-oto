@@ -2297,6 +2297,15 @@ async def get_storefront_homepage() -> dict[str, Any]:
             if key == "promotions":
                 ids = list(dict.fromkeys(str(pid) for c in campaigns for pid in c.get("product_ids", [])))
                 rows = await supabase_get("products", {"select":"id,sku,slug,name,brand,part_number,category,condition,retail_price,published_at","status":"eq.published","id":"in.("+",".join(ids)+")","limit":str(limit)}) if ids else []
+                if rows:
+                    try:
+                        media_by_product = await public_product_media([str(row.get("id")) for row in rows if row.get("id")])
+                        for row in rows:
+                            media = media_by_product.get(str(row.get("id")), [])
+                            row["images"] = media
+                            row["image_url"] = next((item.get("url") for item in media if item.get("is_primary")), media[0].get("url") if media else None)
+                    except HTTPException:
+                        pass
             else:
                 rows = campaigns
             products[key] = rows
