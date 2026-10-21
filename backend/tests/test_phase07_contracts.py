@@ -35,6 +35,8 @@ class Phase07ContractTests(unittest.TestCase):
             ("POST", "/v1/admin/inventory/expire-reservations"),
             ("GET", "/v1/admin/orders"),
             ("GET", "/v1/admin/fulfillment/exceptions"),
+            ("GET", "/v1/admin/orders/{order_id}/communications"),
+            ("POST", "/v1/admin/orders/{order_id}/communications"),
             ("GET", "/v1/admin/payments"),
             ("GET", "/v1/admin/returns"),
             ("POST", "/v1/admin/orders/{order_id}/mutations"),
@@ -106,6 +108,17 @@ class Phase07ContractTests(unittest.TestCase):
 
     def test_fulfillment_exception_queue_requires_verified_bearer_identity(self):
         response = self.client.get("/v1/admin/fulfillment/exceptions?limit=25&offset=0")
+        self.assertEqual(response.status_code, 401)
+
+    def test_order_communication_history_requires_verified_bearer_identity(self):
+        order_id = "00000000-0000-0000-0000-000000000001"
+        response = self.client.get(f"/v1/admin/orders/{order_id}/communications")
+        self.assertEqual(response.status_code, 401)
+        response = self.client.post(
+            f"/v1/admin/orders/{order_id}/communications",
+            json={"channel": "phone", "direction": "outbound", "outcome": "attempted", "summary": "Follow-up call"},
+            headers={"Idempotency-Key": "ec07-communication-unauth-001"},
+        )
         self.assertEqual(response.status_code, 401)
 
     def test_fulfillment_exception_queue_rejects_invalid_exception_code(self):
