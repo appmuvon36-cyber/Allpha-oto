@@ -63,6 +63,25 @@ begin
   or (select status from public.oto_orders where id=v_order)<>'paid' then
   raise exception 'stale pending callback regressed a terminal payment state';
  end if;
+
+ -- Refund cannot be recorded unless an associated return is in refund_pending state.
+ perform set_config('request.jwt.claim.sub',v_admin::text,true);
+ perform set_config('request.jwt.claim.role','authenticated',true);
+ v_caught:=false;
+ begin
+  perform public.oto_order_mutate('record_refund',v_order,
+   jsonb_build_object('return_id','09000000-0000-4000-8000-000000000099','provider_reference','EC09-INVALID-REFUND'),
+   'ec09-refund-without-return');
+  raise exception 'refund without an eligible return unexpectedly succeeded';
+ exception when sqlstate '22023' then
+  if position('refund_reference_and_pending_return_required' in sqlerrm)=0 then raise; end if;
+  v_caught:=true;
+ end;
+ if not v_caught then raise exception 'refund without an eligible return was not rejected'; end if;
+ if exists(select 1 from public.oto_payment_events where order_id=v_order and event_type='refund')
+  or (select status from public.oto_orders where id=v_order)<>'paid' then
+  raise exception 'rejected refund changed payment/order state';
+ end if;
 end
 $ec09$;
 
