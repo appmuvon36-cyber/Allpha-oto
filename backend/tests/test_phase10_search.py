@@ -1,0 +1,87 @@
+from __future__ import annotations
+
+import unittest
+from unittest.mock import AsyncMock, patch
+
+from fastapi.testclient import TestClient
+
+from app import main
+
+
+class Phase10PartSearchTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(main.app)
+
+    def test_part_number_normalization_ignores_formatting_only(self):
+        self.assertEqual(main.normalize_part_number("gtz-7s / 12.0"), "GTZ7S120")
+        self.assertEqual(main.normalize_part_number("  A.B_123 "), "AB123")
+
+    def test_exact_part_number_ranks_above_partial_text(self):
+        exact = {"part_number": "GTZ 7S", "sku": "OTO-BAT-0001", "name": "Aki motor", "brand": "Brand"}
+        partial = {"part_number": "GTZ 7S-X", "sku": "OTO-BAT-0002", "name": "Aki motor", "brand": "Brand"}
+        exact_score, exact_reason = main._score_part_search_candidate("GTZ-7S", exact)
+        partial_score, _ = main._score_part_search_candidate("GTZ-7S", partial)
+        self.assertEqual(exact_score, 100)
+        self.assertGreater(exact_score, partial_score)
+        self.assertTrue(exact_reason)
+
+    def test_search_returns_only_published_query_results_with_verified_fitment_evidence(self):
+        product_id = "00000000-0000-0000-0000-000000000010"
+        products = [{
+            "id": product_id,
+            "sku": "OTO-BAT-0001",
+            "slug": "aki-gtz-7s",
+            "name": "Aki Motor GTZ 7S",
+            "description": "Keterangan katalog",
+            "brand": "Example",
+            "part_number": "GTZ 7S",
+            "condition": "new_aftermarket",
+            "condition_grade": None,
+            "package_quantity": 1,
+            "warranty_days": 30,
+            "currency": "IDR",
+            "retail_price": 100000,
+            "fitment_summary": None,
+            "published_at": "2026-10-01T00:00:00Z",
+        }]
+        fitments = [{
+            "product_id": product_id,
+            "variant_id": "00000000-0000-0000-0000-000000000011",
+            "status": "verified",
+            "evidence_url": "https://example.invalid/evidence",
+            "evidence_note": "Fixture-only evidence",
+            "verified_at": "2026-10-01T00:00:00Z",
+            "vehicle_variants": {"id": "00000000-0000-0000-0000-000000000011", "name": "Variant"},
+        }]
+        with patch.object(main, "supabase_get", new_callable=AsyncMock, side_effect=[products, fitments]) as get_rows:
+            response = self.client.get("/v1/search/parts", params={"q": "GTZ-7S", "limit": 5})
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["normalized_query"], "GTZ7S")
+        self.assertEqual(body["scoring_method"], "deterministic_heuristic_not_probability")
+        self.assertEqual(body["items"][0]["match_score"], 100)
+        self.assertEqual(body["items"][0]["verified_fitments"][0]["status"], "verified")
+        self.assertTrue(any("bukan probabilitas" in note for note in body["items"][0]["uncertainty"]))
+        self.assertEqual(get_rows.await_args_list[0].args[0], "products")
+        self.assertEqual(get_rows.await_args_list[0].args[1]["status"], "eq.published")
+        self.assertEqual(get_rows.await_args_list[1].args[0], "product_fitments")
+        self.assertEqual(get_rows.await_args_list[1].args[1]["status"], "eq.verified")
+
+    def test_search_rejects_non_alphanumeric_query_after_normalization(self):
+        with patch.object(main, "supabase_get", new_callable=AsyncMock) as get_rows:
+            response = self.client.get("/v1/search/parts", params={"q": "---"})
+        self.assertEqual(response.status_code, 422, response.text)
+        get_rows.assert_not_awaited()
+
+    def test_search_empty_catalog_returns_empty_not_mock_candidates(self):
+        with patch.object(main, "supabase_get", new_callable=AsyncMock, return_value=[]) as get_rows:
+            response = self.client.get("/v1/search/parts", params={"q": "shock"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["items"], [])
+        self.assertEqual(response.json()["count"], 0)
+        get_rows.assert_awaited_once()
+
+
+if __name__ == "__main__":
+    unittest.main()
