@@ -68,10 +68,33 @@ export default function HomePage() {
   },[modelId]);
   useEffect(() => {
     let active=true;setLoading(true);setError("");
-    const params=new URLSearchParams({limit:"24"}); if(query.trim())params.set("q",query.trim()); if(partNumber.trim())params.set("part_number",partNumber.trim()); if(selectedCategory)params.set("category_id",selectedCategory); if(condition)params.set("condition",condition); if(variantId)params.set("variant_id",variantId);
-    fetch(API+"/v1/catalog/products?"+params.toString()).then(r=>{if(!r.ok)throw new Error();return r.json()}).then(d=>{if(active)setProducts((d.items??[]) as Product[])}).catch(()=>{if(active){setProducts([]);setError("Katalog belum dapat dimuat. Silakan coba kembali.")}}).finally(()=>{if(active)setLoading(false)});
+    const term=partNumber.trim()||query.trim();
+    const params=new URLSearchParams({limit:"24"});
+    if(query.trim())params.set("q",query.trim());
+    if(partNumber.trim())params.set("part_number",partNumber.trim());
+    if(selectedCategory)params.set("category_id",selectedCategory);
+    if(condition)params.set("condition",condition);
+    if(variantId)params.set("variant_id",variantId);
+    const useIntelligentSearch=Boolean(term)&&!selectedCategory&&!condition;
+    if(useIntelligentSearch){
+      const searchParams=new URLSearchParams({q:term,limit:"24"});
+      if(variantId)searchParams.set("vehicle_variant_id",variantId);
+      if(modelId)searchParams.set("vehicle_model_id",modelId);
+      if(makeId)searchParams.set("vehicle_make_id",makeId);
+      fetch(API+"/v1/search/parts?"+searchParams.toString())
+        .then(r=>{if(!r.ok)throw new Error();return r.json()})
+        .then(d=>{if(active)setProducts((d.items??[]).map((item:{product?:Product})=>item.product).filter(Boolean) as Product[])})
+        .catch(()=>{if(active){setProducts([]);setError("Pencarian spare part belum dapat dimuat. Silakan coba kembali.")}})
+        .finally(()=>{if(active)setLoading(false)});
+    }else{
+      fetch(API+"/v1/catalog/products?"+params.toString())
+        .then(r=>{if(!r.ok)throw new Error();return r.json()})
+        .then(d=>{if(active)setProducts((d.items??[]) as Product[])})
+        .catch(()=>{if(active){setProducts([]);setError("Katalog belum dapat dimuat. Silakan coba kembali.")}})
+        .finally(()=>{if(active)setLoading(false)});
+    }
     return ()=>{active=false};
-  },[query,partNumber,condition,variantId,selectedCategory]);
+  },[query,partNumber,condition,variantId,selectedCategory,makeId,modelId]);
   async function addToCart(productId:string){
     setCartBusy(productId);setCartNotice("");
     try{
