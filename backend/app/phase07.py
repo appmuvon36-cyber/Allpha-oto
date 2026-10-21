@@ -72,6 +72,15 @@ class OrderMutation(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class ManualShippingQuoteCreate(BaseModel):
+    amount: int = Field(ge=0, le=1_000_000_000)
+    carrier: str = Field(min_length=1, max_length=80)
+    service: str = Field(min_length=1, max_length=80)
+    note: str = Field(min_length=2, max_length=1000)
+
+    model_config = {"extra": "forbid"}
+
+
 class OrderCommunicationCreate(BaseModel):
     channel: str = Field(pattern=r"^(whatsapp|phone|email|internal_note)$")
     direction: str = Field(pattern=r"^(outbound|inbound|internal)$")
@@ -90,7 +99,7 @@ class WhatsAppHandoffMutation(BaseModel):
 
 
 async def phase07_rpc(function_name: str, body: dict[str, Any], token: str) -> Any:
-    if function_name not in {"oto_inventory_mutate", "oto_order_mutate", "oto_expire_reservations", "oto_order_whatsapp_handoff", "oto_coupon_preview", "oto_order_communication_add"}:
+    if function_name not in {"oto_inventory_mutate", "oto_order_mutate", "oto_expire_reservations", "oto_order_whatsapp_handoff", "oto_coupon_preview", "oto_order_communication_add", "oto_manual_shipping_quote_set"}:
         raise HTTPException(status_code=422, detail="Unsupported transaction operation.")
     url, anon_key = require_supabase_configuration()
     headers = {
@@ -587,6 +596,25 @@ async def list_fulfillment_exceptions(
         "offset": offset,
         "next_offset": offset + limit if len(rows) == limit else None,
     }
+
+
+@router.post("/v1/admin/orders/{order_id}/manual-shipping-quote", tags=["fulfillment"])
+async def set_manual_shipping_quote(
+    order_id: UUID,
+    request: ManualShippingQuoteCreate = Body(...),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    identity: dict[str, Any] = Depends(require_roles("admin", "order_manager")),
+) -> dict[str, Any]:
+    result = await phase07_rpc(
+        "oto_manual_shipping_quote_set",
+        {
+            "p_order_id": str(order_id),
+            "p_payload": request.model_dump(mode="json"),
+            "p_request_id": idempotency_key,
+        },
+        identity["_access_token"],
+    )
+    return {"result": result}
 
 
 @router.get("/v1/admin/orders/{order_id}/communications", tags=["orders"])
