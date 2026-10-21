@@ -245,7 +245,7 @@ async def supabase_rpc(function: str, payload: dict[str, Any]) -> list[dict[str,
 
 async def supabase_write(method: str, table: str, access_token: str, payload: dict[str, Any], filters: dict[str, str] | None = None) -> list[dict[str, Any]]:
     """Write allowlisted payloads through PostgREST with the caller JWT; RLS remains authoritative."""
-    if method not in {"POST", "PATCH"} or table not in {"product_categories", "product_media", "sourcing_requests", "oto_coupons", "oto_wishlist_items", "oto_saved_vehicles", "oto_notifications"}:
+    if method not in {"POST", "PATCH"} or table not in {"product_categories", "product_media", "sourcing_requests", "oto_coupons", "oto_wishlist_items", "oto_saved_vehicles", "oto_notifications", "part_number_cross_references"}:
         raise HTTPException(status_code=422, detail="Unsupported data mutation.")
     supabase_url, anon_key = require_supabase_configuration()
     headers = {"apikey": anon_key, "Authorization": f"Bearer {access_token}", "Content-Type": "application/json", "Accept": "application/json", "Prefer": "return=representation"}
@@ -352,19 +352,101 @@ def _score_part_search_candidate(query: str, product: dict[str, Any]) -> tuple[i
     return 20, ["Ditemukan melalui pencarian teks; relevansi perlu diperiksa manual."]
 
 
+def _unwrap_relation(value: Any) -> dict[str, Any]:
+    if isinstance(value, list):
+        value = value[0] if value else {}
+    return value if isinstance(value, dict) else {}
+
+
+def _fitment_matches_vehicle(
+    fitment: dict[str, Any],
+    variant_id: UUID | None,
+    model_id: UUID | None,
+    make_id: UUID | None,
+    vehicle_year: int | None,
+) -> tuple[bool, int, list[str]]:
+    """Return a ranking boost only for a fitment already marked verified in the database."""
+    variant = _unwrap_relation(fitment.get("vehicle_variants"))
+    model = _unwrap_relation(variant.get("vehicle_models"))
+    make = _unwrap_relation(model.get("vehicle_makes"))
+    if not variant:
+        return False, 0, []
+    if variant_id and str(variant.get("id")) != str(variant_id):
+        return False, 0, []
+    if model_id and str(model.get("id")) != str(model_id):
+        return False, 0, []
+    if make_id and str(make.get("id")) != str(make_id):
+        return False, 0, []
+    if vehicle_year is not None:
+        year_start = variant.get("year_start")
+        year_end = variant.get("year_end")
+        if year_start is None or year_end is None or not int(year_start) <= vehicle_year <= int(year_end):
+            return False, 0, []
+    reasons = ["Memiliki bukti fitment yang sudah berstatus verified untuk pilihan kendaraan."]
+    boost = 30 if variant_id else 20 if model_id else 12 if make_id else 8
+    if vehicle_year is not None:
+        boost += 8
+        reasons.append(f"Rentang tahun fitment mencakup {vehicle_year}.")
+    return True, boost, reasons
+
+
+def _cross_reference_matches_product(
+    mapping: dict[str, Any], query_normalized: str, product: dict[str, Any]
+) -> bool:
+    canonical = str(mapping.get("canonical_normalized") or "")
+    alternate = str(mapping.get("alternate_normalized") or "")
+    part = normalize_part_number(str(product.get("part_number") or ""))
+    return (
+        query_normalized in {canonical, alternate}
+        and part in {canonical, alternate}
+        and part != query_normalized
+    )
+
+
 @app.get("/v1/search/parts", tags=["search"])
 async def search_part_candidates(
     q: str = Query(min_length=2, max_length=100),
     limit: int = Query(default=10, ge=1, le=20),
+    vehicle_variant_id: UUID | None = Query(default=None),
+    vehicle_model_id: UUID | None = Query(default=None),
+    vehicle_make_id: UUID | None = Query(default=None),
+    vehicle_year: int | None = Query(default=None, ge=1900, le=2200),
 ) -> dict[str, Any]:
-    """Rank only published catalog rows and expose the evidence and uncertainty for each candidate."""
+    """Rank published catalog candidates by text, approved cross-references and verified vehicle evidence."""
     normalized_query = normalize_part_number(q)
     if len(normalized_query) < 2:
         raise HTTPException(status_code=422, detail="Masukkan minimal dua huruf atau angka yang dapat dicari.")
     safe_query = safe_search_term(q)
     variants = list(dict.fromkeys(term for term in (safe_query, normalized_query) if term))
+
+    # Only approved mappings with explicit source provenance are eligible for public retrieval.
+    cross_references = await supabase_get(
+        "part_number_cross_references",
+        {
+            "select": "id,canonical_part_number,alternate_part_number,canonical_normalized,alternate_normalized,canonical_type,alternate_type,relation_type,manufacturer,source_type,source_name,source_url,source_reference,source_checked_at,review_status,reviewed_at",
+            "or": f"(canonical_normalized.eq.{normalized_query},alternate_normalized.eq.{normalized_query})",
+            "review_status": "eq.approved",
+            "limit": "50",
+        },
+    )
+    cross_references = [
+        row for row in cross_references
+        if row.get("review_status") == "approved"
+        and row.get("source_type") in {
+            "manufacturer_catalog", "oem_catalog", "authorized_distributor_catalog",
+            "tecdoc", "verified_supplier_catalog",
+        }
+        and str(row.get("source_url") or "").startswith(("https://", "http://"))
+    ]
+    search_terms = list(variants)
+    for mapping in cross_references:
+        for field in ("canonical_part_number", "alternate_part_number", "canonical_normalized", "alternate_normalized"):
+            value = safe_search_term(str(mapping.get(field) or ""))
+            if value and value not in search_terms:
+                search_terms.append(value)
+
     clauses: list[str] = []
-    for term in variants:
+    for term in search_terms:
         for field in ("part_number", "sku", "name", "brand"):
             clauses.append(f"{field}.ilike.*{term}*")
     for token in re.findall(r"[A-Za-z0-9]+", q):
@@ -374,7 +456,7 @@ async def search_part_candidates(
                 for field in ("part_number", "sku", "name", "brand"):
                     clauses.append(f"{field}.ilike.*{safe_token}*")
     params = {
-        "select": "id,sku,slug,name,description,brand,part_number,condition,condition_grade,package_quantity,warranty_days,currency,retail_price,fitment_summary,published_at",
+        "select": "id,sku,slug,name,description,brand,part_number,category,condition,condition_grade,package_quantity,warranty_days,currency,retail_price,fitment_summary,published_at,status",
         "status": "eq.published",
         "or": f"({','.join(dict.fromkeys(clauses))})",
         "order": "name.asc",
@@ -382,7 +464,6 @@ async def search_part_candidates(
     }
     retrieved_products = await supabase_get("products", params)
     # The live catalog has contained a row marked published whose own metadata says draft/unverified.
-    # Do not resurface those known-invalid rows as search candidates.
     products = [
         row for row in retrieved_products
         if "belum diverifikasi" not in str(row.get("condition_grade") or "").casefold()
@@ -407,37 +488,181 @@ async def search_part_candidates(
             product_id = str(fitment.get("product_id") or "")
             if product_id in fitments_by_product:
                 fitments_by_product[product_id].append(fitment)
+
+    vehicle_filter_requested = any((vehicle_variant_id, vehicle_model_id, vehicle_make_id, vehicle_year is not None))
     ranked: list[dict[str, Any]] = []
     for product in products:
-        score, reasons = _score_part_search_candidate(q, product)
+        text_score, reasons = _score_part_search_candidate(q, product)
         product_id = str(product.get("id") or "")
         verified_fitments = fitments_by_product.get(product_id, [])
+        matched_mappings = [
+            mapping for mapping in cross_references
+            if _cross_reference_matches_product(mapping, normalized_query, product)
+        ]
+        if matched_mappings and text_score < 95:
+            text_score = 95
+            reasons.append("Nomor part terkait melalui cross-reference yang disetujui; periksa bukti sumber sebelum menyimpulkan kompatibilitas.")
+
+        vehicle_matched = False
+        vehicle_boost = 0
+        vehicle_reasons: list[str] = []
+        for fitment in verified_fitments:
+            matched, boost, fitment_reasons = _fitment_matches_vehicle(
+                fitment, vehicle_variant_id, vehicle_model_id, vehicle_make_id, vehicle_year
+            )
+            if matched and boost > vehicle_boost:
+                vehicle_matched, vehicle_boost, vehicle_reasons = True, boost, fitment_reasons
         uncertainty = ["Skor adalah heuristik pengurutan, bukan probabilitas kecocokan."]
         if not verified_fitments:
             uncertainty.append("Tidak ada bukti fitment terverifikasi yang dikembalikan untuk kandidat ini.")
-        if not product.get("condition"):
-            uncertainty.append("Kondisi produk belum tersedia.")
+        if vehicle_filter_requested and not vehicle_matched:
+            uncertainty.append("Belum ada bukti fitment terverifikasi yang cocok dengan kendaraan pilihan; kandidat ini tidak boleh dianggap kompatibel.")
+        if not product.get("condition") or product.get("condition") == "unknown":
+            uncertainty.append("Kondisi produk belum terverifikasi secara memadai.")
         uncertainty.append("Stok dan ongkos kirim tidak diverifikasi oleh endpoint pencarian ini.")
         ranked.append({
             "product": product,
-            "match_score": score,
-            "match_strength": "exact" if score >= 97 else "strong" if score >= 78 else "partial" if score >= 55 else "weak",
+            "match_score": text_score,
+            "vehicle_relevance_score": vehicle_boost,
+            "relevance_score": text_score + vehicle_boost,
+            "match_strength": "exact" if text_score >= 97 else "strong" if text_score >= 78 else "partial" if text_score >= 55 else "weak",
             "match_reasons": reasons,
+            "vehicle_match_status": "verified_fitment_match" if vehicle_matched else "no_verified_match" if vehicle_filter_requested else "not_requested",
+            "vehicle_match_reasons": vehicle_reasons,
             "verified_fitments": verified_fitments,
+            "matched_cross_references": [
+                {
+                    "id": mapping.get("id"),
+                    "canonical_part_number": mapping.get("canonical_part_number"),
+                    "alternate_part_number": mapping.get("alternate_part_number"),
+                    "canonical_type": mapping.get("canonical_type"),
+                    "alternate_type": mapping.get("alternate_type"),
+                    "relation_type": mapping.get("relation_type"),
+                    "source_type": mapping.get("source_type"),
+                    "source_name": mapping.get("source_name"),
+                    "source_url": mapping.get("source_url"),
+                    "review_status": mapping.get("review_status"),
+                    "reviewed_at": mapping.get("reviewed_at"),
+                } for mapping in matched_mappings
+            ],
             "uncertainty": uncertainty,
         })
-    ranked.sort(key=lambda item: (-item["match_score"], str(item["product"].get("name") or "").casefold()))
+    ranked.sort(key=lambda item: (
+        0 if item["vehicle_match_status"] == "verified_fitment_match" else 1,
+        -item["relevance_score"],
+        str(item["product"].get("name") or "").casefold(),
+    ))
     candidates = ranked[:limit]
     return {
         "query": q,
         "normalized_query": normalized_query,
         "scoring_method": "deterministic_heuristic_not_probability",
+        "vehicle_filter": {
+            "variant_id": str(vehicle_variant_id) if vehicle_variant_id else None,
+            "model_id": str(vehicle_model_id) if vehicle_model_id else None,
+            "make_id": str(vehicle_make_id) if vehicle_make_id else None,
+            "year": vehicle_year,
+            "verified_fitment_is_required_for_compatibility_claim": True,
+        },
         "items": candidates,
         "count": len(candidates),
         "candidate_count_before_limit": len(ranked),
         "limit": limit,
-        "notice": "Hasil pencarian adalah kandidat. Verifikasi nomor part, kondisi, fitment, stok, dan sumber sebelum membeli atau memublikasikan data.",
+        "notice": "Hasil pencarian adalah kandidat. Cross-reference hanya memakai sumber yang disetujui; skor tidak mengubah status fitment. Verifikasi nomor part, kondisi, fitment, stok, dan sumber sebelum membeli atau memublikasikan data.",
     }
+
+
+class PartNumberMappingCreate(BaseModel):
+    canonical_part_number: str = Field(min_length=1, max_length=120)
+    alternate_part_number: str = Field(min_length=1, max_length=120)
+    canonical_type: str
+    alternate_type: str
+    relation_type: str = "cross_reference"
+    manufacturer: str | None = Field(default=None, max_length=180)
+    source_type: str
+    source_name: str = Field(min_length=2, max_length=180)
+    source_url: str = Field(min_length=8, max_length=1000)
+    source_reference: str | None = Field(default=None, max_length=300)
+    review_note: str | None = Field(default=None, max_length=1000)
+    model_config = {"extra": "forbid"}
+
+
+class PartNumberMappingReview(BaseModel):
+    action: str
+    review_note: str | None = Field(default=None, max_length=1000)
+    model_config = {"extra": "forbid"}
+
+
+@app.get("/v1/admin/part-number-mappings", tags=["admin-search"])
+async def list_part_number_mappings(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10000),
+    identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "moderator")),
+) -> dict[str, Any]:
+    rows = await supabase_get(
+        "part_number_cross_references",
+        {"select": "id,canonical_part_number,alternate_part_number,canonical_type,alternate_type,relation_type,manufacturer,source_type,source_name,source_url,source_reference,source_checked_at,review_status,review_note,reviewed_by,reviewed_at,created_by,created_at,updated_at", "order": "created_at.desc", "limit": str(limit), "offset": str(offset)},
+        access_token=identity["_access_token"],
+    )
+    return {"items": rows, "count": len(rows), "limit": limit, "offset": offset}
+
+
+@app.post("/v1/admin/part-number-mappings", tags=["admin-search"], status_code=201)
+async def create_part_number_mapping(
+    request: PartNumberMappingCreate = Body(...),
+    identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "moderator")),
+) -> dict[str, Any]:
+    allowed_sources = {"manufacturer_catalog", "oem_catalog", "authorized_distributor_catalog", "tecdoc", "verified_supplier_catalog"}
+    if request.canonical_type not in {"oem", "aftermarket"} or request.alternate_type not in {"oem", "aftermarket"} or request.canonical_type == request.alternate_type:
+        raise HTTPException(status_code=422, detail="Pemetaan harus menyatakan satu nomor OEM dan satu nomor aftermarket.")
+    if request.relation_type not in {"cross_reference", "supersedes", "replaces"}:
+        raise HTTPException(status_code=422, detail="Jenis relasi nomor part tidak didukung.")
+    if request.source_type not in allowed_sources:
+        raise HTTPException(status_code=422, detail="Jenis sumber tidak termasuk daftar sumber tepercaya yang diizinkan.")
+    if not re.match(r"^https?://[^\\s]+$", request.source_url.strip(), flags=re.IGNORECASE):
+        raise HTTPException(status_code=422, detail="URL sumber harus berupa tautan HTTP/HTTPS yang valid.")
+    if normalize_part_number(request.canonical_part_number) == normalize_part_number(request.alternate_part_number):
+        raise HTTPException(status_code=422, detail="Nomor part kanonis dan alternatif tidak boleh identik setelah normalisasi.")
+    actor_id = str((identity.get("user") or {}).get("id") or "")
+    payload = request.model_dump(mode="json", exclude_none=True)
+    payload.update({
+        "canonical_part_number": request.canonical_part_number.strip(),
+        "alternate_part_number": request.alternate_part_number.strip(),
+        "source_url": request.source_url.strip(),
+        "source_checked_at": datetime.now(timezone.utc).isoformat(),
+        "review_status": "pending_review",
+        "reviewed_by": None,
+        "reviewed_at": None,
+        "created_by": actor_id,
+    })
+    rows = await supabase_write("POST", "part_number_cross_references", identity["_access_token"], payload)
+    if not rows:
+        raise HTTPException(status_code=503, detail="Pemetaan nomor part tidak dapat disimpan.")
+    return {"item": rows[0], "notice": "Pemetaan tersimpan sebagai pending_review; belum dipakai pada pencarian publik."}
+
+
+@app.patch("/v1/admin/part-number-mappings/{mapping_id}/review", tags=["admin-search"])
+async def review_part_number_mapping(
+    mapping_id: UUID,
+    request: PartNumberMappingReview = Body(...),
+    identity: dict[str, Any] = Depends(require_roles("admin", "catalog_editor", "moderator")),
+) -> dict[str, Any]:
+    if request.action not in {"approve", "reject"}:
+        raise HTTPException(status_code=422, detail="Aksi review harus approve atau reject.")
+    actor_id = str((identity.get("user") or {}).get("id") or "")
+    payload = {
+        "review_status": "approved" if request.action == "approve" else "rejected",
+        "reviewed_by": actor_id,
+        "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        "review_note": request.review_note.strip() if request.review_note else None,
+    }
+    rows = await supabase_write(
+        "PATCH", "part_number_cross_references", identity["_access_token"], payload,
+        filters={"id": f"eq.{mapping_id}", "review_status": "eq.pending_review"},
+    )
+    if not rows:
+        raise HTTPException(status_code=409, detail="Pemetaan tidak ditemukan atau sudah direview.")
+    return {"item": rows[0], "notice": "Status cross-reference diperbarui. Status fitment produk tidak diubah."}
 
 
 
