@@ -152,6 +152,8 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/phase08_user_directory_assertions.sql
       - name: Apply EC-08 integration reliability migration
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261021014348_ec08_commerce_integration_reliability.sql
+      - name: Apply EC-08 idempotency replay hardening
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261021014829_ec08_idempotency_replay_guards.sql
       - name: Verify EC-08 RLS, grants, indexes and guarded functions
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/ec08_db_assertions.sql
       - name: Apply unknown-condition draft support
