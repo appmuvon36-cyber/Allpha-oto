@@ -72,6 +72,16 @@ class OrderMutation(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class OrderCommunicationCreate(BaseModel):
+    channel: str = Field(pattern=r"^(whatsapp|phone|email|internal_note)$")
+    direction: str = Field(pattern=r"^(outbound|inbound|internal)$")
+    outcome: str = Field(pattern=r"^(planned|attempted|sent|received|failed|not_sent)$")
+    summary: str = Field(min_length=2, max_length=2000)
+    external_reference: str | None = Field(default=None, max_length=300)
+
+    model_config = {"extra": "forbid"}
+
+
 class WhatsAppHandoffMutation(BaseModel):
     action: str = Field(pattern=r"^(confirm|decline)$")
     note: str | None = Field(default=None, max_length=1000)
@@ -80,7 +90,7 @@ class WhatsAppHandoffMutation(BaseModel):
 
 
 async def phase07_rpc(function_name: str, body: dict[str, Any], token: str) -> Any:
-    if function_name not in {"oto_inventory_mutate", "oto_order_mutate", "oto_expire_reservations", "oto_order_whatsapp_handoff", "oto_coupon_preview"}:
+    if function_name not in {"oto_inventory_mutate", "oto_order_mutate", "oto_expire_reservations", "oto_order_whatsapp_handoff", "oto_coupon_preview", "oto_order_communication_add"}:
         raise HTTPException(status_code=422, detail="Unsupported transaction operation.")
     url, anon_key = require_supabase_configuration()
     headers = {
@@ -577,6 +587,54 @@ async def list_fulfillment_exceptions(
         "offset": offset,
         "next_offset": offset + limit if len(rows) == limit else None,
     }
+
+
+@router.get("/v1/admin/orders/{order_id}/communications", tags=["orders"])
+async def list_order_communications(
+    order_id: UUID,
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0, le=10000),
+    identity: dict[str, Any] = Depends(require_roles("admin", "order_manager")),
+) -> dict[str, Any]:
+    order_rows = await supabase_get(
+        "oto_orders",
+        {"select": "id", "id": f"eq.{order_id}", "limit": "1"},
+        identity["_access_token"],
+    )
+    if not order_rows:
+        raise HTTPException(status_code=404, detail="Pesanan tidak ditemukan.")
+    rows = await supabase_get(
+        "oto_order_communications",
+        {
+            "select": "id,order_id,actor_user_id,channel,direction,outcome,summary,external_reference,created_at",
+            "order_id": f"eq.{order_id}",
+            "order": "created_at.desc",
+            "limit": str(limit),
+            "offset": str(offset),
+        },
+        identity["_access_token"],
+    )
+    return {"items": rows, "count": len(rows), "limit": limit, "offset": offset,
+            "next_offset": offset + limit if len(rows) == limit else None}
+
+
+@router.post("/v1/admin/orders/{order_id}/communications", tags=["orders"])
+async def add_order_communication(
+    order_id: UUID,
+    request: OrderCommunicationCreate = Body(...),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    identity: dict[str, Any] = Depends(require_roles("admin", "order_manager")),
+) -> dict[str, Any]:
+    result = await phase07_rpc(
+        "oto_order_communication_add",
+        {
+            "p_order_id": str(order_id),
+            "p_payload": request.model_dump(mode="json", exclude_none=True),
+            "p_request_id": idempotency_key,
+        },
+        identity["_access_token"],
+    )
+    return {"result": result}
 
 
 @router.get("/v1/admin/payments", tags=["payments"])
