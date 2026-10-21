@@ -121,7 +121,7 @@ test.describe("OtoClinic public production UI QA", () => {
 
   test("direct customer routes resolve to safe public or sign-in states", async ({ page }) => {
     const cases = [
-      ["/", /spare part tepat/i],
+      ["/", /Sparepart Original dan Berkualitas/i],
       ["/account", /masuk|akun/i],
       ["/cart", /masuk untuk checkout/i],
       ["/checkout", /masuk untuk checkout/i],
