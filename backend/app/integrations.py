@@ -472,11 +472,22 @@ async def reconcile_pending_payments(
         "summary": {"mode": "bounded_pending_scan"},
     })
     run_id = str(run_rows[0]["id"]) if run_rows else None
-    intents = await _service_get("oto_payment_intents", {
-        "select": "id,order_id,provider_order_id,provider_transaction_id,amount,status,token,created_at",
-        "provider": "eq.rajaongkir", "status": "in.(pending,challenge)",
-        "order": "created_at.asc", "limit": str(limit),
-    })
+    try:
+        intents = await _service_get("oto_payment_intents", {
+            "select": "id,order_id,provider_order_id,provider_transaction_id,amount,status,token,created_at",
+            "provider": "eq.rajaongkir", "status": "in.(pending,challenge)",
+            "order": "created_at.asc", "limit": str(limit),
+        })
+    except HTTPException:
+        if run_id:
+            try:
+                await _service_write("oto_integration_reconciliation_runs", "PATCH", {
+                    "status": "failed", "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "summary": {"failure_codes": ["payment_intent_scan_failed"]},
+                }, {"id": "eq." + run_id})
+            except HTTPException:
+                pass
+        raise
     matched = mismatched = failed = 0
     safe_failures: list[str] = []
     for intent in intents:

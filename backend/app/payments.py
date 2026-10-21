@@ -339,7 +339,8 @@ async def rajaongkir_webhook(request: Request) -> dict[str, Any]:
     if status == "paid" and amount is None:
         raise HTTPException(status_code=422, detail="Paid callback must include an amount.")
     digest = hashlib.sha256(raw_body).hexdigest()
-    event_key = str(_field(data, "event_id", "callback_id", "payment_id", "id") or f"{provider_order_id}:{status}:{digest[:24]}")
+    explicit_event_id = _field(data, "event_id", "callback_id", "notification_id")
+    event_key = f"provider-event:{str(explicit_event_id)[:200]}" if explicit_event_id else f"callback:{hashlib.sha256((str(provider_order_id) + '|' + str(payment_id or '') + '|' + status + '|' + digest).encode()).hexdigest()}"
     await _apply_verified_status(event_key, str(provider_order_id), str(payment_id) if payment_id else None, status, amount, digest)
     return {"received": True, "correlation_id": correlation_id}
 

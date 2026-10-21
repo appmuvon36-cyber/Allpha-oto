@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     whatsapp_order_status_template: str = ""
     whatsapp_template_language: str = "id"
     integration_worker_secret: str = ""
+    whatsapp_webhook_verify_token: str = ""
+    whatsapp_app_secret: str = ""
     # RajaOngkir/Komerce Payment API; credentials are server-side only.
     rajaongkir_payment_api_key: str = ""
     rajaongkir_payment_environment: str = "sandbox"
