@@ -150,6 +150,12 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261020064000_phase08_user_directory_provisioning.sql
       - name: Verify Auth user directory, profile provisioning and audit
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/phase08_user_directory_assertions.sql
+      - name: Apply EC-04 payment intent and webhook lifecycle migration
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261020095600_ec04_midtrans_payment_lifecycle.sql
+      - name: Apply EC-04 RajaOngkir payment provider migration
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261020150000_ec04_rajaongkir_payment_provider.sql
+      - name: Apply EC-04 payment instructions migration
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261020152000_ec04_rajaongkir_payment_instructions.sql
       - name: Apply EC-08 integration reliability migration
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261021014348_ec08_commerce_integration_reliability.sql
       - name: Apply EC-08 idempotency replay hardening
