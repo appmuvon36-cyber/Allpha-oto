@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, CarFront, Search, ShieldCheck, Wrench, PackageSearch, CircleHelp, ShoppingCart, House, Grid2X2, Plus, Heart, UserRound } from "lucide-react";
-import { PwaInstallPrompt } from "./pwa-client";
+import { PwaInstallPrompt, PwaSplashIntro } from "./pwa-client";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 type Product = { id: string; name: string; sku: string; brand: string | null; part_number: string | null; category: string; condition: string; retail_price: number | null; status: string; published_at?: string | null; image_url?: string | null; stock_status?: "in_stock"|"low_stock"|"out_of_stock"|"stale"|"unverified"; stock_checked_at?: string|null; images?: {id:string;url:string;alt_text:string;media_kind:string;is_primary:boolean}[] };
@@ -134,6 +134,7 @@ export default function HomePage() {
   const money = (n: number | null) => n === null ? "Hubungi untuk harga" : new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
 
   return <main className="min-h-screen">
+    <PwaSplashIntro/>
     <header className="store-header sticky top-0 z-20 border-b border-[var(--color-border)] bg-white/95 backdrop-blur">
       <div className="mx-auto flex min-h-[72px] max-w-7xl items-center justify-between gap-2 px-3 sm:h-[72px] sm:gap-4 sm:px-6">
         <Link href="/" className="flex min-w-0 items-center gap-2 sm:gap-3" aria-label="OtoClinic beranda">
@@ -146,6 +147,7 @@ export default function HomePage() {
     </header>
     <section className="mx-auto max-w-7xl px-3 pt-4 sm:px-6 sm:pt-6" aria-label="Hero OtoClinic">
       <div className="store-promo-banner relative isolate overflow-hidden rounded-[1.5rem] bg-[var(--color-ink)] px-5 py-7 text-white sm:rounded-[2rem] sm:px-9 sm:py-10 lg:px-12 lg:py-12">
+        <img aria-hidden="true" alt="" fetchPriority="high" decoding="async" src="https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=900&q=80" className="store-promo-photo"/>
         <div aria-hidden="true" className="pointer-events-none absolute -right-10 -top-12 h-52 w-52 rounded-full border border-white/10 sm:h-72 sm:w-72"></div>
         <div aria-hidden="true" className="pointer-events-none absolute right-8 top-8 hidden h-32 w-32 rounded-full border border-white/10 sm:block"></div>
         <div className="relative grid items-center gap-7 md:grid-cols-[1.15fr_.85fr] md:gap-10">

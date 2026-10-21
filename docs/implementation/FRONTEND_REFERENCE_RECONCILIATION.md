@@ -39,3 +39,13 @@ Scope: Customer PWA presentation only. The canonical application remains `appmuv
 ## Next phase
 
 Complete Phase 09 UI/UX QA gate: inspect CI results, verify the exact deployed commit and existing routes, and run responsive/interactions/accessibility checks at 360, 390, 820, and 1440 px. Continue to Phase 10 only after the required gate is closed.
+
+
+## Asset integration follow-up — 2026-10-21
+
+- Copied the existing reference splash artwork from `fadliansyah36/Front-end-UI-Otoclinic/public/otoclinic_splash_art.jpg` to `apps/web/public/images/otoclinic-splash-art.jpg`; no new illustration was generated.
+- Applied the exact vehicle image URL used by the reference homepage's hero banner as a decorative, responsive image layer in the canonical homepage.
+- Added `PwaSplashIntro`: a short once-per-tab splash overlay with animated artwork, decorative motion, a visible skip control, and reduced-motion support. The overlay does not alter authentication or commerce state.
+- Preserved the existing `PwaInstallPrompt` implementation and its placement in the header; no PWA install logic was removed or replaced.
+- Bumped the existing service-worker shell cache to v3 and added the local splash image to the app shell for offline startup after installation/cache refresh.
+- CI run for the preceding UI commit passed web and admin builds/typechecks and backend contract tests. This new asset/splash commit must complete its own CI run; production deployment and 360/390/820/1440 viewport QA remain pending.

@@ -140,3 +140,79 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     transition-duration: .01ms !important;
   }
 }
+
+
+/* Reference hero image + animated splash intro. Keep the existing PWA install flow intact. */
+.store-promo-banner { isolation: isolate; }
+.store-promo-photo {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  right: 0;
+  width: 58%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 58%;
+  opacity: .34;
+  mix-blend-mode: screen;
+  mask-image: linear-gradient(90deg, transparent 0%, #000 32%, #000 100%);
+  pointer-events: none;
+}
+.pwa-splash-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  overflow: hidden;
+  padding: 24px;
+  background: radial-gradient(ellipse at 50% 42%, #fff 0%, #fff8f4 48%, #f5f6f8 100%);
+  color: #101b2b;
+  opacity: 1;
+  transition: opacity .32s ease, visibility .32s ease;
+}
+.pwa-splash-intro.is-closing { opacity: 0; visibility: hidden; pointer-events: none; }
+.pwa-splash-art-wrap {
+  position: relative;
+  z-index: 1;
+  width: min(72vw, 320px);
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border: 1px solid rgb(239 91 42 / 18%);
+  border-radius: 28px;
+  background: #fff;
+  box-shadow: 0 22px 60px rgb(16 27 43 / 12%), 0 0 0 8px rgb(239 91 42 / 5%);
+  animation: oto-splash-float 3.2s ease-in-out infinite;
+}
+.pwa-splash-art-wrap img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.pwa-splash-orbit {
+  position: absolute;
+  width: min(86vw, 380px);
+  aspect-ratio: 1 / 1;
+  border: 1px solid rgb(239 91 42 / 18%);
+  border-radius: 36%;
+  animation: oto-splash-orbit 14s linear infinite;
+  pointer-events: none;
+}
+.pwa-splash-orbit-one { transform: rotate(22deg); }
+.pwa-splash-orbit-two { width: min(96vw, 430px); border-color: rgb(16 27 43 / 8%); animation-direction: reverse; }
+.pwa-splash-brand { z-index: 1; margin-top: 12px; font-size: 30px; line-height: 1; font-weight: 900; letter-spacing: -.045em; }
+.pwa-splash-tagline { z-index: 1; color: #ef5b2a; font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+.pwa-splash-progress { z-index: 1; width: 112px; height: 3px; margin-top: 15px; overflow: hidden; border-radius: 99px; background: #e2e8f0; }
+.pwa-splash-progress span { display: block; width: 42%; height: 100%; border-radius: inherit; background: #ef5b2a; animation: oto-splash-progress 1.5s ease-in-out infinite; }
+.pwa-splash-skip { position: absolute; z-index: 2; right: 18px; bottom: max(18px, env(safe-area-inset-bottom)); min-height: 44px; padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 12px; background: rgb(255 255 255 / 88%); color: #475569; font-size: 12px; font-weight: 700; }
+.pwa-splash-skip:focus-visible { outline: 3px solid #f6b39c; outline-offset: 2px; }
+@keyframes oto-splash-float { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-7px) scale(1.012); } }
+@keyframes oto-splash-orbit { from { rotate: 0deg; } to { rotate: 360deg; } }
+@keyframes oto-splash-progress { 0% { transform: translateX(-120%); } 100% { transform: translateX(360%); } }
+@media (max-width: 767px) {
+  .store-promo-photo { width: 100%; opacity: .18; object-position: 65% center; mask-image: linear-gradient(90deg, rgb(0 0 0 / 10%), #000 100%); }
+  .pwa-splash-art-wrap { width: min(72vw, 280px); border-radius: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pwa-splash-art-wrap, .pwa-splash-orbit, .pwa-splash-progress span { animation: none !important; }
+  .pwa-splash-intro { transition: none; }
+}

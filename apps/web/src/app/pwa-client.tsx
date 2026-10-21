@@ -7,3 +7,35 @@ useEffect(()=>{const before=(e:Event)=>{e.preventDefault();setPromptEvent(e as I
 if(installed)return null;
 const click=async()=>{if(promptEvent){await promptEvent.prompt();const result=await promptEvent.userChoice;if(result.outcome==="accepted")setInstalled(true);setPromptEvent(null)}else setHelp(v=>!v)};
 return <div className="pwa-install-wrap"><button className="pwa-install-button" onClick={()=>void click()}><Download size={15}/><span>Install App</span></button>{help&&<div className="pwa-install-help" role="dialog" aria-label="Petunjuk instalasi"><button className="pwa-help-close" onClick={()=>setHelp(false)} aria-label="Tutup"><X size={15}/></button><Smartphone size={21}/><strong>Pasang OtoClinic</strong><p>Android/Chrome: buka menu ⋮ lalu pilih <b>Install app</b> atau <b>Tambahkan ke layar utama</b>.</p><p>iPhone/Safari: tekan <b>Bagikan</b>, lalu <b>Tambahkan ke Layar Utama</b>.</p></div>}</div>}
+
+
+
+/** Short, once-per-tab intro using the approved OtoClinic splash artwork. */
+export function PwaSplashIntro(){
+  const [visible,setVisible]=useState(false);
+  const [closing,setClosing]=useState(false);
+  useEffect(()=>{
+    try{
+      if(window.sessionStorage.getItem("otoclinic-splash-seen")==="1")return;
+      window.sessionStorage.setItem("otoclinic-splash-seen","1");
+      setVisible(true);
+      const closeTimer=window.setTimeout(()=>setClosing(true),1450);
+      const hideTimer=window.setTimeout(()=>setVisible(false),1800);
+      return ()=>{window.clearTimeout(closeTimer);window.clearTimeout(hideTimer)};
+    }catch{
+      setVisible(false);
+    }
+  },[]);
+  if(!visible)return null;
+  return <div className={"pwa-splash-intro"+(closing?" is-closing":"")} role="status" aria-label="Memuat OtoClinic">
+    <div className="pwa-splash-orbit pwa-splash-orbit-one" aria-hidden="true"/>
+    <div className="pwa-splash-orbit pwa-splash-orbit-two" aria-hidden="true"/>
+    <div className="pwa-splash-art-wrap">
+      <img src="/images/otoclinic-splash-art.jpg" alt="" fetchPriority="high" decoding="async"/>
+    </div>
+    <strong className="pwa-splash-brand">OtoClinic</strong>
+    <span className="pwa-splash-tagline">Spare part otomotif</span>
+    <div className="pwa-splash-progress" aria-hidden="true"><span/></div>
+    <button type="button" className="pwa-splash-skip" onClick={()=>setVisible(false)}>Lewati</button>
+  </div>;
+}
