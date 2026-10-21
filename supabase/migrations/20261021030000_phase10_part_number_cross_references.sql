@@ -53,7 +53,7 @@ drop policy if exists "catalog staff manages part number cross references" on pu
 create policy "catalog staff manages part number cross references"
   on public.part_number_cross_references for all to authenticated
   using (public.oto_has_staff_role(ARRAY['admin','catalog_editor','moderator']::public.oto_user_role[]))
-  with check (public.oto_has_staff_role(array['admin'::public.oto_user_role, 'catalog_editor'::public.oto_user_role, 'moderator'::public.oto_user_role));
+  with check (public.oto_has_staff_role(ARRAY['admin','catalog_editor','moderator']::public.oto_user_role[]));
 
 create or replace function public.oto_audit_part_number_cross_reference()
 returns trigger
