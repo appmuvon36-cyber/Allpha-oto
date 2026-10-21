@@ -7,7 +7,7 @@
 
 - Public read-only endpoint: `GET /v1/search/parts?q=<query>&limit=<1..20>`.
 - Uses the existing FastAPI service and existing Supabase `products` and `product_fitments` data. No new database, search service, or schema migration.
-- Candidate retrieval filters to `products.status = published`; fitment evidence is restricted to `product_fitments.status = verified`.
+- Candidate retrieval filters to `products.status = published`; a trust guard also excludes rows whose own description or condition-grade metadata explicitly labels them draft/unverified. Fitment evidence is restricted to `product_fitments.status = verified`.
 - Part-number normalization removes formatting punctuation and uppercases identifiers. It does not infer that two different identifiers are semantically interchangeable.
 - Deterministic ranking prioritizes exact normalized part number, exact SKU, exact name, partial identifiers, and text-token overlap.
 - Results include reasons, verified fitment rows, explicit uncertainty, and a warning that the heuristic score is not a probability. The endpoint does not assert stock or shipping validity and does not make any product/fitment publication decision.
@@ -15,7 +15,7 @@
 
 ## Initial automated coverage
 
-`backend/tests/test_phase10_search.py` covers normalization, exact-versus-partial ranking, published-only product query constraints, verified-only fitment evidence, invalid normalized query rejection, and honest empty results. This is a source/CI test specification until the CI run for the new commit reports its result.
+`backend/tests/test_phase10_search.py` covers normalization, exact-versus-partial ranking, published-only product query constraints, verified-only fitment evidence, invalid normalized query rejection, honest empty results, and suppression of a published row whose own metadata says draft/unverified. GitHub Actions run [39538131975](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39538131975) completed successfully: API contract/database tests and Web lint/typecheck/build passed. Railway deployment `4f07fd4f-779a-406e-b649-2e71032c1d1d` succeeded on `main` commit `5fe8a639ba5e543e1826bddb9c7ea3ef6580dd42`. Read-only production smoke returned `/health` 200, `/v1/search/parts?q=GTZ-7S` 200 with no candidates because the matching published row is explicitly draft/unverified, and malformed query 422. No production data was changed.
 
 ## Follow-on Phase 10 work
 
