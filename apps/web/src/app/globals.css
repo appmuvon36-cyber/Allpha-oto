@@ -428,3 +428,16 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 @media(min-width:640px) {
  .store-home > section[aria-label="Pencarian dan kendaraan"] { padding-top:1.25rem !important; }
 }
+
+/* Ensure all existing marketplace sections participate in the explicit home-page order. */
+.store-home > * { order:5; }
+.store-home > .pwa-splash-intro { order:-1; }
+.store-home > header { order:0; }
+.store-home > section[aria-label="Pencarian dan kendaraan"] { order:1; }
+.store-home > section[aria-label="Hero OtoClinic"] { order:2; }
+.store-home > #kategori { order:3; }
+.store-home > #katalog { order:4; }
+.store-home > section[aria-labelledby="koleksi-title"] { order:5; }
+.store-home > #permintaan { order:8; }
+.store-home > footer { order:9; }
+.store-home > .store-bottom-nav { order:10; }
