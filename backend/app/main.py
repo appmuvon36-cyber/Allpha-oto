@@ -380,7 +380,17 @@ async def search_part_candidates(
         "order": "name.asc",
         "limit": "100",
     }
-    products = await supabase_get("products", params)
+    retrieved_products = await supabase_get("products", params)
+    # The live catalog has contained a row marked published whose own metadata says draft/unverified.
+    # Do not resurface those known-invalid rows as search candidates.
+    products = [
+        row for row in retrieved_products
+        if "belum diverifikasi" not in str(row.get("condition_grade") or "").casefold()
+        and "belum diverifikasi" not in str(row.get("description") or "").casefold()
+        and "kandidat draft" not in str(row.get("description") or "").casefold()
+        and "tetap draft" not in str(row.get("description") or "").casefold()
+        and "hanya untuk review internal" not in str(row.get("description") or "").casefold()
+    ]
     product_ids = list(dict.fromkeys(str(row["id"]) for row in products if row.get("id")))
     fitments_by_product: dict[str, list[dict[str, Any]]] = {product_id: [] for product_id in product_ids}
     if product_ids:
