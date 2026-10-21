@@ -32,6 +32,9 @@ export default function InventoryOrdersPage() {
   const [inventory, setInventory] = useState<Row[]>([]);
   const [publishedProducts, setPublishedProducts] = useState<{id:string;sku:string|null;name:string;status:string}[]>([]);
   const [orders, setOrders] = useState<Row[]>([]);
+  const [exceptionOrders, setExceptionOrders] = useState<Row[]>([]);
+  const [exceptionNextOffset, setExceptionNextOffset] = useState<number | null>(null);
+  const [exceptionsLoading, setExceptionsLoading] = useState(false);
   const [payments, setPayments] = useState<Row[]>([]);
   const [returns, setReturns] = useState<Row[]>([]);
   const [fulfillmentOrder, setFulfillmentOrder] = useState("");
@@ -96,10 +99,40 @@ export default function InventoryOrdersPage() {
     setOrders(bodies[1].body.items ?? []);
     setPayments(bodies[2].body.items ?? []);
     setReturns(returnList.flatMap(x => x.body.items ?? []));
+    if (canManageOrders) {
+      try {
+        const exceptionResponse = await fetch(API + "/v1/admin/fulfillment/exceptions?limit=100&offset=0", { headers, cache: "no-store" });
+        const exceptionBody = await exceptionResponse.json().catch(() => ({}));
+        if (!exceptionResponse.ok) throw new Error("HTTP " + exceptionResponse.status);
+        setExceptionOrders(exceptionBody.items ?? []);
+        setExceptionNextOffset(typeof exceptionBody.next_offset === "number" ? exceptionBody.next_offset : null);
+      } catch {
+        setExceptionOrders([]);
+        setExceptionNextOffset(null);
+        setError("Antrean kendala pengiriman tidak dapat dimuat. Periksa izin role dan endpoint API.");
+      }
+    } else {
+      setExceptionOrders([]);
+      setExceptionNextOffset(null);
+    }
     setLoading(false);
   }, [supabase]);
 
   useEffect(() => { void load(); }, [load]);
+
+  async function loadMoreExceptions() {
+    if (exceptionNextOffset === null || exceptionsLoading) return;
+    setExceptionsLoading(true);
+    try {
+      const result = await api("/v1/admin/fulfillment/exceptions?limit=100&offset=" + exceptionNextOffset);
+      setExceptionOrders(current => [...current, ...((result.items ?? []) as Row[])]);
+      setExceptionNextOffset(typeof result.next_offset === "number" ? result.next_offset : null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Antrean kendala tidak dapat dimuat.");
+    } finally {
+      setExceptionsLoading(false);
+    }
+  }
 
   async function mutate(path: string, action: string, payload: Row = {}) {
     if (!window.confirm("Konfirmasi aksi " + action + "? Perubahan transaksi akan dicatat ke audit.")) return;
@@ -185,7 +218,7 @@ export default function InventoryOrdersPage() {
     </header>
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
       <div className="mb-5 flex flex-wrap gap-2" role="tablist" aria-label="Area transaksi">
-        {tabs.map(t => { const Icon = t.icon; return <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={"inline-flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold " + (tab === t.id ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100")}><Icon size={17}/>{t.name}</button>; })}
+        {tabs.filter(t => t.id === "inventory" ? ["admin", "inventory_manager", "order_manager"].includes(role) : ["admin", "order_manager"].includes(role)).map(t => { const Icon = t.icon; return <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={"inline-flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold " + (tab === t.id ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100")}><Icon size={17}/>{t.name}</button>; })}
       </div>
       {error && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>}
       {notice && <div role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</div>}
@@ -236,12 +269,13 @@ export default function InventoryOrdersPage() {
       </section>}
       {tab === "exceptions" && <section className="overflow-hidden rounded-2xl border bg-white">
         <div className="border-b p-4"><h2 className="font-semibold">Antrean kendala pengiriman</h2><p className="text-sm text-slate-500">Daftar ini hanya memakai catatan kendala yang dikembalikan API pesanan. Tidak ada kendala atau pesanan contoh yang dibuat.</p></div>
-        {orders.filter(o => Boolean(o.shipping_exception_code || o.shipping_exception_note)).length === 0
-          ? <p className="p-8 text-sm text-slate-500">Tidak ada kendala pengiriman yang tercatat pada pesanan yang berhasil dimuat.</p>
-          : <div className="divide-y">{orders.filter(o => Boolean(o.shipping_exception_code || o.shipping_exception_note)).map(o => <article key={asText(o.id)} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
+        {exceptionOrders.length === 0
+          ? <p className="p-8 text-sm text-slate-500">Tidak ada kendala pengiriman terbuka yang tercatat pada antrean server.</p>
+          : <div className="divide-y">{exceptionOrders.map(o => <article key={asText(o.id)} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0"><p className="break-all font-semibold">{asText(o.id)}</p><p className="mt-1 text-sm text-slate-600">{label[asText(o.status, "")] ?? asText(o.status)} · {money(o.total_amount)}</p><p className="mt-2 text-sm font-medium text-amber-800">{asText(o.shipping_exception_code, "KODE KENDALA TIDAK TERSEDIA")}</p><p className="text-sm text-slate-700">{asText(o.shipping_exception_note, "Catatan kendala belum tersedia.")}</p><p className="mt-1 text-xs text-slate-500">Pembaruan terakhir: {o.shipping_last_event_at ? new Date(String(o.shipping_last_event_at)).toLocaleString("id-ID") : "belum tercatat"}</p></div>
             <button onClick={() => { setFulfillmentOrder(asText(o.id)); setTab("fulfillment"); }} className="shrink-0 rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50">Kelola kendala</button>
           </article>)}</div>}
+        {exceptionNextOffset !== null && <div className="border-t p-4"><button disabled={exceptionsLoading} onClick={() => void loadMoreExceptions()} className="rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-50">{exceptionsLoading ? "Memuat…" : "Muat 100 kendala berikutnya"}</button></div>}
       </section>}
       {tab === "payments" && <section className="overflow-hidden rounded-2xl border bg-white"><div className="border-b p-4"><h2 className="font-semibold">Verifikasi pembayaran</h2><p className="text-sm text-slate-500">Bukti transfer hanya bukti pengajuan. Verifikasi harus dilakukan personel berwenang.</p></div>
           {payments.length===0?<p className="p-8 text-sm text-slate-500">Tidak ada pembayaran menunggu review.</p>:<div className="divide-y">{payments.map(p=><article key={asText(p.id)} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="font-semibold">Order {asText(p.order_id)}</p><p className="text-sm text-slate-500">Bukti: {asText(p.evidence_reference)} · {new Date(String(p.created_at)).toLocaleString("id-ID")}</p><p className="font-semibold">{money(p.amount)}</p></div><div className="flex flex-wrap gap-2"><button onClick={()=>{const ref=window.prompt("Nomor referensi bank/provider atau catatan verifikasi wajib");if(ref?.trim())void mutate("/v1/admin/orders/"+asText(p.order_id)+"/mutations","verify_payment",{payment_event_id:p.id,provider_reference:ref.trim()})}} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Verifikasi</button><button onClick={()=>{const reason=window.prompt("Alasan penolakan pembayaran");if(reason?.trim())void mutate("/v1/admin/orders/"+asText(p.order_id)+"/mutations","reject_payment",{payment_event_id:p.id,reason:reason.trim()})}} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700">Tolak</button></div></article>)}</div>}
