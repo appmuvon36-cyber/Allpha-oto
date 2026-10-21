@@ -89,7 +89,7 @@ class Phase10PartSearchTests(unittest.TestCase):
             response = self.client.get("/v1/search/parts", params={"q": "GTZ7S"})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["items"], [])
-        get_rows.assert_awaited_once()
+        self.assertEqual(get_rows.await_count, 2)
 
 
     def test_verified_vehicle_fitment_boosts_candidate_without_changing_fitment_state(self):
@@ -142,7 +142,7 @@ class Phase10PartSearchTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["items"], [])
         self.assertEqual(response.json()["count"], 0)
-        get_rows.assert_awaited_once()
+        self.assertEqual(get_rows.await_count, 2)
 
 
 if __name__ == "__main__":
