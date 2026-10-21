@@ -3,7 +3,7 @@
 **Scope:** OtoClinic commerce transaction integrity and security acceptance.  
 **Repository:** `appmuvon36-cyber/Allpha-oto`, branch `main`.  
 **Database:** Existing Supabase project only; synthetic test identities/rows are created exclusively by the disposable CI PostgreSQL fixture.  
-**Status:** CI acceptance coverage passed on source commit `e257b779b3c0be58560dc25e7cc587749bda7418` (run 39533480729); the additive payment replay guard is applied to the existing Supabase production project. The three Railway services remain online, but API production is still running the earlier EC-08 commit `573088ae2d4211348550d32f4b1de87def17bc55`; Railway rejected the source refresh with “Deploys have been paused temporarily.” Therefore the new API-side event guard is not yet live in production. External-provider checks are explicitly configuration-gated.
+**Status:** CI acceptance coverage passed on source commit `e257b779b3c0be58560dc25e7cc587749bda7418` (run 39533480729); the additive payment replay guard is applied to the existing Supabase production project. The three Railway services remain online, but API production is still running the earlier EC-08 commit `573088ae2d4211348550d32f4b1de87def17bc55`; Railway rejected the source refresh with “Deploys have been paused temporarily.” The database-side replay/conflict guard is live through the applied Supabase migration; the API-side pre-validation for provider-order/event key length is not yet deployed. Database-level key bounds remain enforced. External-provider checks are explicitly configuration-gated.
 
 ## Acceptance matrix
 
