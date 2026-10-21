@@ -128,7 +128,7 @@ export default function AdminPage() {
     </header>
     <nav aria-label="Navigasi operasional" className="border-b border-slate-200 bg-white">
       <div className="mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 py-3 sm:px-6">
-        {[["Ringkasan","/admin"],["Katalog & fitment","/catalog"],["Supplier","/suppliers"],["Inventori & pesanan","/inventory-orders"],["Pengguna","/users"],["Audit log","/audit"]].map(([label,href])=><Link key={href} href={href} className={"inline-flex min-h-10 shrink-0 items-center rounded-xl border px-3 text-xs font-bold transition "+(href==="/admin"?"border-orange-200 bg-orange-50 text-[var(--color-primary)]":"border-slate-200 text-slate-600 hover:border-orange-200 hover:bg-orange-50/50")}>{label}</Link>)}
+        {[["Ringkasan","/admin"],["Katalog & fitment","/catalog"],["Supplier","/suppliers"],["Inventori & pesanan","/inventory-orders"],["Pengguna","/users"],["Beranda & promo","/storefront"],["Audit log","/audit"]].map(([label,href])=><Link key={href} href={href} className={"inline-flex min-h-10 shrink-0 items-center rounded-xl border px-3 text-xs font-bold transition "+(href==="/admin"?"border-orange-200 bg-orange-50 text-[var(--color-primary)]":"border-slate-200 text-slate-600 hover:border-orange-200 hover:bg-orange-50/50")}>{label}</Link>)}
       </div>
     </nav>
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
@@ -169,6 +169,7 @@ export default function AdminPage() {
           </div>
           <aside className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6"><h2 className="font-extrabold">Akses cepat</h2><div className="mt-4 space-y-2">
             <Link href="/catalog" className="flex min-h-11 items-center justify-between rounded-xl border border-slate-200 px-3 text-sm font-semibold hover:bg-slate-50">Katalog & fitment <ArrowRight size={15}/></Link>
+            {overview.role === "admin" && <Link href="/storefront" className="flex min-h-11 items-center justify-between rounded-xl border border-slate-200 px-3 text-sm font-semibold hover:bg-slate-50">Pengaturan beranda, promo & iklan <ArrowRight size={15}/></Link>}
             <Link href="/suppliers" className="flex min-h-11 items-center justify-between rounded-xl border border-slate-200 px-3 text-sm font-semibold hover:bg-slate-50">Supplier & sourcing <ArrowRight size={15}/></Link>
             <Link href="/inventory-orders" className="flex min-h-11 items-center justify-between rounded-xl border border-slate-200 px-3 text-sm font-semibold hover:bg-slate-50">Inventori & pesanan <ArrowRight size={15}/></Link>
             {overview.role === "admin" && <><Link href="/users" className="flex min-h-11 items-center justify-between rounded-xl border border-slate-200 px-3 text-sm font-semibold hover:bg-slate-50"><span className="flex items-center gap-2"><Users size={15}/> Role & pengguna</span><ArrowRight size={15}/></Link><Link href="/audit" className="flex min-h-11 items-center justify-between rounded-xl border border-slate-200 px-3 text-sm font-semibold hover:bg-slate-50"><span className="flex items-center gap-2"><Activity size={15}/> Audit explorer</span><ArrowRight size={15}/></Link></>}
