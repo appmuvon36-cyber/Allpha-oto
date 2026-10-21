@@ -3,7 +3,7 @@
 **Scope:** OtoClinic commerce transaction integrity and security acceptance.  
 **Repository:** `appmuvon36-cyber/Allpha-oto`, branch `main`.  
 **Database:** Existing Supabase project only; synthetic test identities/rows are created exclusively by the disposable CI PostgreSQL fixture.  
-**Status:** CI acceptance coverage passed on source commit `e9aa7dac08e33e49217d2673dab4d9c588df7fe4`; the additive payment replay guard is applied to the existing Supabase production project. Railway application deployment is still blocked because Railway returned “Deploys have been paused temporarily” when a same-repository/main source refresh was requested. External-provider checks are explicitly configuration-gated.
+**Status:** CI acceptance coverage passed on source commit `e257b779b3c0be58560dc25e7cc587749bda7418` (run 39533480729); the additive payment replay guard is applied to the existing Supabase production project. The three Railway services remain online, but API production is still running the earlier EC-08 commit `573088ae2d4211348550d32f4b1de87def17bc55`; Railway rejected the source refresh with “Deploys have been paused temporarily.” Therefore the new API-side event guard is not yet live in production. External-provider checks are explicitly configuration-gated.
 
 ## Acceptance matrix
 
@@ -22,7 +22,7 @@
 | RLS | EC-09/EC-08 SQL assertions | RLS remains enabled on commerce/payment/integration tables; privileged operations use guarded RPCs | Disposable-DB assertions |
 | WhatsApp provider delivery | Railway configuration inventory | Cloud API token, phone-number ID, Graph API version, approved template, webhook verify token, Meta app secret and worker secret are required | **BLOCKED** until configured |
 | Authenticated production customer/staff journey | Approved test accounts and safe test order/payment path | Run customer checkout and authorized staff workflows without production test contamination | **DEFERRED** to Phase 12 / approved test identity |
-| Production release | [OtoClinic CI run 39533170595](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39533170595) on `e9aa7dac08e33e49217d2673dab4d9c588df7fe4`; fresh API health smoke returned HTTP 200 before the source refresh attempt | Isolated API/DB acceptance and web lint/typecheck/build passed; production API source refresh was attempted but Railway paused deployments | **Code/DB checks passed; API deployment pending.** Current Railway API deployment `c395881e-3eb6-4f12-92df-681cd69f2fee` still reports commit `573088ae2d4211348550d32f4b1de87def17bc55`. |
+| Production release | [OtoClinic CI run 39533480729](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39533480729) on `e257b779b3c0be58560dc25e7cc587749bda7418`; fresh API health smoke returned HTTP 200 before the source refresh attempt | Isolated API/DB acceptance and web lint/typecheck/build passed; production API source refresh was attempted but Railway paused deployments | **Code/DB checks passed; API deployment pending.** Current Railway API deployment `c395881e-3eb6-4f12-92df-681cd69f2fee` still reports commit `573088ae2d4211348550d32f4b1de87def17bc55`. |
 
 ## Change and rollback notes
 
