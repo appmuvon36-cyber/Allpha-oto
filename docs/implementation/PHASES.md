@@ -93,16 +93,16 @@ Brand: OtoClinic. Production database already contains a preliminary business sc
 - Source commits: `a36e4971bc97c26e28ae9d7ccb89a058c1fec46b` (customer homepage), `602326903cca57c1392f124aeab71b9bbee29d6e` (customer styles), `7ef2ef139e2b5ab8e1680cacb17f11cbb1c462da` (admin navigation), `425d031d2ac00db801087656843887e0b999e5d6` (admin styles).
 - Remaining release gate: confirm CI/build for the exact source commits, deploy the web and admin services from the updated `main`, smoke-test public routes, and manually verify mobile/desktop visual behavior. Do not mark the refactor fully complete until this evidence is collected.
 
-## UI/UX Refactor QA Gate (PARTIAL — NOT CLOSED)
+## UI/UX Refactor QA Gate (OWNER WAIVER FOR PHASE PROGRESSION; FULL QA DEFERRED TO PHASE 12)
 - QA evidence and blockers are recorded in [UI_UX_REFACTOR_QA.md](./UI_UX_REFACTOR_QA.md).
 - Production screenshots were collected for Customer Web and Admin login at 360, 390, 820, and 1440px requested viewport widths. Public route smoke confirmed customer empty states and unauthenticated Admin redirects; this is not equivalent to full interactive or authenticated E2E.
 - The `/checkout` route returned 404 during smoke testing. An additive Next.js redirect was added so direct navigation routes into the existing authenticated cart/checkout flow; verify the exact deployment before considering this finding closed.
 - Vehicle taxonomy and public catalog APIs return empty arrays. No production seed data was inserted, so positive-path vehicle selection and cart/checkout cannot be fully exercised with live records.
-- Remaining: real browser interaction/overflow/keyboard checks at the four viewports, post-deploy checkout redirect smoke, authorized staff-role flows, approved test-customer checkout/order path, exact-commit CI/build confirmation. Phase 10 remains deferred until this gate is closed.
+- Owner decision (21 Oct 2026): accept this gate for feature progression without further real-browser or authenticated production transactions. This is a sequencing waiver, not a claim those checks passed. Full viewport interaction/keyboard checks, authenticated staff/customer journeys, and exact-commit release QA remain deferred to Phase 12. Catalog publication integrity issue is tracked separately and must be resolved before treating the storefront as commerce-ready.
 
-## E-Commerce Completion Program (OWNER PRIORITY — MUST COMPLETE BEFORE PHASE 10)
+## E-Commerce Completion Program (OWNER ACCEPTED FOR PHASE PROGRESSION WITH EXPLICIT QA WAIVER)
 
-Phase 05–09 provide important primitives, but they do not yet constitute a complete production commerce experience. The owner has explicitly prioritized end-to-end e-commerce completion, including WhatsApp-assisted checkout, before any AI/search work. Preserve existing phase numbers; execute the following commerce completion waves before Phase 10.
+Phase 05–09 and EC-01 through EC-09 provide the commerce primitives. On 21 Oct 2026 the owner explicitly authorized closing EC-09 for phase progression while skipping additional real production tests. Preserve this distinction: the phase is accepted for progression, but authenticated live checkout/payment/return/refund verification is deferred to Phase 12; no production test transactions were created.
 
 ### EC-01 — Customer storefront and product trust
 - Finish responsive storefront, category hierarchy, real product detail/media gallery, brand/part-number filters, condition/grade, package quantity, warranty, stock freshness, verified vehicle fitment, shipping/returns information, and sourcing request for unavailable parts.
@@ -167,7 +167,7 @@ Phase 05–09 provide important primitives, but they do not yet constitute a com
 - Live Railway variable-name inspection showed no WhatsApp Cloud API token, phone-number ID, Graph API version, approved template, webhook verify token, Meta app secret, or integration worker secret. Therefore WhatsApp sending and webhook acceptance remain safely disabled until the owner configures these server-only values; scheduled worker execution also remains disabled until a worker secret and scheduler are configured. The current service has `WHATSAPP_BUSINESS_PHONE` for deep links, which is not a Cloud API credential. Payment/shipping activation is reported from server-side configuration flags; secret values were not read or exposed.
 - No production outbox, consent, reconciliation, order, or payment rows were seeded. Real provider delivery and authenticated live reconciliation were not simulated or claimed. CI adds EC-08 migration/grant assertions and focused route/validation contracts.
 
-## EC-09 — Commerce acceptance gate (CI PASS; PRODUCTION API DEPLOYMENT / PROVIDER CONFIGURATION BLOCKED)
+## EC-09 — Commerce acceptance gate (CLOSED FOR PHASE PROGRESSION BY OWNER WAIVER; LIVE TRANSACTION QA DEFERRED)
 - Additive migration `20261021022911_ec09_payment_webhook_replay_guards.sql` binds a payment provider event key to its payload digest/status, rejects conflicting reuse, validates digest and key bounds, and prevents delayed pending/failure callbacks from downgrading a settled/captured/paid/refunded intent. Existing payment/order rows are not rewritten.
 - `backend/tests/test_ec09_acceptance.py` covers callback signature rejection before mutation, valid HMAC callback contract, callback payload size/secret-off behavior, required paid amount, unsupported status rejection, bounded provider event IDs, unauthenticated payment/shipping/admin endpoints, and customer-only payment method access.
 - `backend/tests/ec09_acceptance_assertions.sql` verifies the disposable database's payment webhook idempotency, conflicting payload rejection, amount mismatch rejection, monotonic payment state, RLS, and privileged RPC grants.
@@ -175,7 +175,7 @@ Phase 05–09 provide important primitives, but they do not yet constitute a com
 - Existing Phase 07 SQL transaction tests cover checkout replay, oversell rejection, stock reservation/release, payment evidence review, returns/refunds, and audit/ledger entries. Existing EC-02 SQL covers signed quote tampering, expiry, and cross-customer quote replay. Existing EC-08 SQL covers outbox retry/dead-letter, webhook delivery deduplication, service-role-only worker RPCs, and RLS/grants. The EC-09 CI workflow now runs these prior suites together with the new acceptance checks.
 - Browser QA for public routes, empty/error states and responsive overflow at 360/390/820/1440 px is run through the existing production UI QA workflow. Authenticated live customer/staff transactions still require approved test identities and belong in Phase 12; no production order/test mutations are created for acceptance.
 - Live Railway variable-name inspection showed payment credentials configured but WhatsApp Cloud API token, phone-number ID, Graph API version, approved template, webhook verification token, Meta app secret, and integration worker secret absent. Thus WhatsApp provider delivery/webhook and scheduled worker execution remain blocked until configuration is supplied. Do not label these provider-dependent checks passed.
-- CI run 39533480729 passed on `e257b779b3c0be58560dc25e7cc587749bda7418`; the production Supabase migration is applied and RPC grants/RLS were checked live. Railway services are online, but API is still deployed at EC-08 commit `573088ae2d4211348550d32f4b1de87def17bc55`. A source refresh attempt was blocked by Railway's “Deploys have been paused temporarily” response, so EC-09 API code is not yet confirmed live. WhatsApp credentials/worker secret and authenticated production E2E remain blockers. EC-09 is not fully closed until the API code is deployed and provider-dependent items are either configured and verified or explicitly accepted as blockers. See `docs/implementation/EC09_ACCEPTANCE_REPORT.md`.
+- CI run [39533480729](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39533480729) passed on EC-09 code commit `e257b779b3c0be58560dc25e7cc587749bda7418`; the additive production Supabase replay guard and its service-role-only grants were verified. Railway API deployment `7639d819-b995-4b33-88cc-4a82ed624beb` reached SUCCESS on `df888d72955d8d629afabc24b2c6554cdbb9b61d` from `main`, root `/backend`; live HTTP smoke returned `/health` 200, `/ready` 200, public catalog 200, and unauthenticated admin/orders 401. The owner accepts EC-09 for phase progression and explicitly waives additional real production tests. Authenticated checkout/payment/return/refund journeys remain unverified and are deferred to Phase 12. No production test orders, payment intents, webhook events, returns, or refunds were created. See `docs/implementation/EC09_ACCEPTANCE_REPORT.md`.
 
 ### Reference patterns researched
 - Astra Otoparts product taxonomy and filters by brand, vehicle application and product classification: https://international.astraotoshop.com/product?category=Spare+Parts
@@ -186,9 +186,12 @@ Phase 05–09 provide important primitives, but they do not yet constitute a com
 
 These are product-pattern references, not evidence that OtoClinic has those provider integrations enabled. Copy the useful workflow patterns, not another vendor's UI or backend.
 
-## Phase 10 — AI and search (NOT IMPLEMENTED)
-- Part number normalization, evidence-backed candidate search, confidence/uncertainty.
-- AI cannot independently publish uncertain fitment, price, or product data.
+## Phase 10 — AI and Search Intelligence (IN PROGRESS)
+- Added public read-only `GET /v1/search/parts?q=...&limit=...` backed by the existing Supabase catalog through FastAPI; only `published` products are eligible, and only `verified` fitment records are returned as fitment evidence.
+- Normalizes part identifiers by removing formatting punctuation and uppercasing; ranks candidates deterministically using exact part number/SKU, partial identifier, name/brand and token overlap. `match_score` is explicitly a heuristic ordering score, not a probability or a guarantee of vehicle compatibility.
+- Each candidate returns match reasons, verified fitment evidence, uncertainty notices, and a warning that stock/shipping are not verified by this endpoint. Empty catalog responses remain empty; no sample or mock products are generated.
+- Initial automated coverage is in `backend/tests/test_phase10_search.py` for normalization, ranking, published-only query filters, verified-only fitment evidence, invalid query handling, and empty-catalog behavior. CI results and the exact-code Railway deployment are pending this Phase 10 commit.
+
 
 ## Phase 11 — Integrations (NOT IMPLEMENTED; PROVIDERS/SECRETS UNCONFIRMED)
 - WhatsApp/outbox, supplier feed, payment and logistics adapters when credentials/providers are configured.
@@ -202,9 +205,9 @@ These are product-pattern references, not evidence that OtoClinic has those prov
 ## Execution order
 1. Preserve Phase 05 catalog/fitment, Phase 06 supplier/sourcing, Phase 07 inventory/orders, and Phase 08 Super Admin primitives; reconcile any discrepancy against live schema/source before changing them.
 2. Complete Phase 09 customer PWA and close its responsive/public-route gate.
-3. Execute EC-01 through EC-09 in the E-Commerce Completion Program above. This owner-priority commerce gate supersedes starting AI/search; Phase 10 must remain deferred until it is closed.
+3. EC-01 through EC-09 are accepted for feature progression under the owner’s explicit 21 Oct 2026 QA waiver. Authenticated production financial journeys and full responsive/accessibility QA are deferred to Phase 12; this does not claim they passed.
 4. Promote only the required Phase 11 integration work (WhatsApp, payment and logistics adapters) into EC-03/04/05/08, and activate each provider only after credentials/webhook verification are present.
-5. Add Phase 10 evidence-based AI/search only after the complete e-commerce gate is accepted.
+5. Proceed with Phase 10 evidence-based AI/search using real catalog data, explicit uncertainty, and no autonomous publication of unverified product/fitment claims.
 6. Run Phase 12 full release gate, including real active-user authorization sessions, RLS/IDOR, accessibility, performance, webhook and transaction E2E.
 
 ## Working policy
