@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
@@ -17,7 +19,9 @@ from pydantic import BaseModel, Field
 from app.main import require_active_profile, require_roles, require_supabase_configuration, settings
 from app.payments import _apply_verified_status, _field, _normalized_status, _payment_base, _provider_json, _unwrap
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+_worker_task: asyncio.Task | None = None
 CONSENT_VERSION = "whatsapp-order-status-v1"
 _ALLOWED_SERVICE_RPCS = {
     "oto_integration_outbox_enqueue",
@@ -25,6 +29,7 @@ _ALLOWED_SERVICE_RPCS = {
     "oto_integration_outbox_complete",
     "oto_integration_outbox_fail",
     "oto_integration_outbox_requeue",
+    "oto_whatsapp_webhook_event_record",
 }
 
 
@@ -180,19 +185,23 @@ def _provider_readiness() -> dict[str, Any]:
     whatsapp = bool(settings.whatsapp_cloud_api_token.strip() and settings.whatsapp_phone_number_id.strip()
                      and settings.whatsapp_graph_api_version.strip() and settings.whatsapp_order_status_template.strip()
                      and settings.supabase_service_role_key.strip())
+    whatsapp_webhook = bool(settings.whatsapp_webhook_verify_token.strip() and settings.whatsapp_app_secret.strip()
+                            and settings.supabase_service_role_key.strip())
     return {
         "providers": {
             "rajaongkir_payment": {"configured": payment, "mode": settings.rajaongkir_payment_environment if payment else "disabled"},
             "rajaongkir_shipping": {"configured": shipping, "mode": "live" if shipping else "disabled"},
             "whatsapp_cloud": {"configured": whatsapp, "mode": "live" if whatsapp else "disabled"},
+            "whatsapp_webhook": {"configured": whatsapp_webhook, "mode": "verified" if whatsapp_webhook else "disabled"},
         },
-        "worker": {"internal_secret_configured": bool(settings.integration_worker_secret.strip())},
+        "worker": {"internal_secret_configured": bool(settings.integration_worker_secret.strip()), "in_process_worker_enabled": whatsapp},
         "capabilities": {
             "webhook_signature_validation": bool(settings.rajaongkir_payment_callback_secret.strip()),
             "payment_reconciliation": payment,
             "outbox_retry": True,
             "dead_letter_requeue": True,
             "whatsapp_consent_required": True,
+            "whatsapp_webhook_signature_validation": whatsapp_webhook,
         },
     }
 
@@ -208,7 +217,7 @@ def _normalize_indonesian_phone(value: Any) -> str:
     return digits
 
 
-async def _send_whatsapp_template(payload: dict[str, Any]) -> tuple[str | None, str]:
+async def _send_whatsapp_template(payload: dict[str, Any], correlation_id: str) -> tuple[str | None, str]:
     if not (settings.whatsapp_cloud_api_token.strip() and settings.whatsapp_phone_number_id.strip()
             and settings.whatsapp_graph_api_version.strip()):
         raise IntegrationProviderError("whatsapp_provider_not_configured", True)
@@ -222,6 +231,7 @@ async def _send_whatsapp_template(payload: dict[str, Any]) -> tuple[str | None, 
         raise IntegrationProviderError("whatsapp_template_parameters_invalid", False)
     body = {
         "messaging_product": "whatsapp", "recipient_type": "individual", "to": to, "type": "template",
+        "biz_opaque_callback_data": correlation_id[:128],
         "template": {"name": template_name, "language": {"code": language},
                      "components": [{"type": "body", "parameters": [{"type": "text", "text": x} for x in parameters]}] if parameters else []},
     }
@@ -279,7 +289,7 @@ async def _dispatch_batch(limit: int, correlation_id: str) -> dict[str, Any]:
             payload = row.get("payload")
             if not isinstance(payload, dict):
                 raise IntegrationProviderError("outbox_payload_invalid", False)
-            message_id, response_digest = await _send_whatsapp_template(payload)
+            message_id, response_digest = await _send_whatsapp_template(payload, row_correlation)
             await _service_rpc("oto_integration_outbox_complete", {
                 "p_id": row_id, "p_lock_token": lock_token,
                 "p_provider_message_id": message_id, "p_response_digest": response_digest,
@@ -312,13 +322,13 @@ async def integration_status(identity: dict[str, Any] = Depends(require_roles("a
 
 @router.get("/v1/admin/integrations/outbox", tags=["integrations"])
 async def list_integration_outbox(
-    status: str | None = Query(default=None, pattern=r"^(pending|processing|retry|delivered|dead_letter)$"),
+    status: str | None = Query(default=None, pattern=r"^(pending|processing|retry|provider_accepted|dead_letter)$"),
     provider: str | None = Query(default=None, pattern=r"^whatsapp_cloud$"),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0, le=10000),
     identity: dict[str, Any] = Depends(require_roles("admin", "order_manager")),
 ) -> dict[str, Any]:
-    params = {"select": "id,event_key,provider,event_type,correlation_id,aggregate_type,aggregate_id,status,attempt_count,max_attempts,next_attempt_at,last_error_code,last_error_at,delivered_at,provider_message_id,created_at,updated_at",
+    params = {"select": "id,event_key,provider,event_type,correlation_id,aggregate_type,aggregate_id,status,provider_delivery_status,attempt_count,max_attempts,next_attempt_at,last_error_code,last_error_at,delivered_at,provider_accepted_at,provider_message_id,created_at,updated_at",
               "order": "created_at.desc", "limit": str(limit), "offset": str(offset)}
     if status:
         params["status"] = "eq." + status
@@ -456,6 +466,98 @@ async def enqueue_order_status_whatsapp(
     return {"outbox": result, "correlation_id": correlation, "message": "Notifikasi dimasukkan ke antrean; ini bukan bukti pesan telah terkirim."}
 
 
+
+@router.get("/v1/webhooks/whatsapp", tags=["integration-webhooks"], include_in_schema=False)
+async def verify_whatsapp_webhook(
+    mode: str | None = Query(default=None, alias="hub.mode"),
+    verify_token: str | None = Query(default=None, alias="hub.verify_token"),
+    challenge: str | None = Query(default=None, alias="hub.challenge"),
+) -> PlainTextResponse:
+    expected = settings.whatsapp_webhook_verify_token.strip()
+    if not expected:
+        raise HTTPException(status_code=503, detail="WhatsApp webhook verification is not configured.")
+    if mode != "subscribe" or not verify_token or not hmac.compare_digest(verify_token, expected):
+        raise HTTPException(status_code=403, detail="WhatsApp webhook verification failed.")
+    if challenge is None or len(challenge) > 512:
+        raise HTTPException(status_code=400, detail="WhatsApp webhook challenge is invalid.")
+    return PlainTextResponse(challenge)
+
+
+@router.post("/v1/webhooks/whatsapp", tags=["integration-webhooks"])
+async def whatsapp_cloud_webhook(request: Request) -> dict[str, Any]:
+    app_secret = settings.whatsapp_app_secret.strip()
+    if not app_secret:
+        raise HTTPException(status_code=503, detail="WhatsApp webhook signature validation is not configured.")
+    content_length = request.headers.get("content-length", "")
+    if content_length.isdigit() and int(content_length) > 262144:
+        raise HTTPException(status_code=413, detail="WhatsApp webhook payload is too large.")
+    raw_body = await request.body()
+    if len(raw_body) > 262144:
+        raise HTTPException(status_code=413, detail="WhatsApp webhook payload is too large.")
+    supplied = request.headers.get("X-Hub-Signature-256", "").strip()
+    expected = "sha256=" + hmac.new(app_secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    if not supplied or not hmac.compare_digest(expected, supplied):
+        raise HTTPException(status_code=401, detail="Invalid WhatsApp webhook signature.")
+    try:
+        parsed = json.loads(raw_body)
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid WhatsApp webhook JSON.") from exc
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=400, detail="Invalid WhatsApp webhook payload.")
+    accepted = duplicates = ignored = 0
+    entries = parsed.get("entry", [])
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        changes = entry.get("changes", [])
+        for change in changes if isinstance(changes, list) else []:
+            if not isinstance(change, dict) or not isinstance(change.get("value"), dict):
+                continue
+            statuses = change["value"].get("statuses", [])
+            for item in statuses if isinstance(statuses, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                message_id = str(item.get("id") or "").strip()
+                status = str(item.get("status") or "").strip().lower()
+                if not message_id or len(message_id) > 240 or status not in {"sent", "delivered", "read", "failed"}:
+                    ignored += 1
+                    continue
+                timestamp = None
+                timestamp_raw = item.get("timestamp")
+                try:
+                    if timestamp_raw is not None:
+                        timestamp = datetime.fromtimestamp(int(timestamp_raw), tz=timezone.utc).isoformat()
+                except (ValueError, TypeError, OverflowError, OSError):
+                    ignored += 1
+                    continue
+                errors = item.get("errors") if isinstance(item.get("errors"), list) else []
+                first_error = errors[0] if errors and isinstance(errors[0], dict) else {}
+                error_code = str(first_error.get("code"))[:100] if first_error.get("code") is not None else None
+                status_digest = hashlib.sha256(json.dumps(item, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                event_key = f"{message_id}:{status}:{timestamp or status_digest[:20]}"
+                callback_correlation = item.get("biz_opaque_callback_data")
+                if callback_correlation is not None:
+                    callback_correlation = str(callback_correlation)[:128]
+                try:
+                    result = await _service_rpc("oto_whatsapp_webhook_event_record", {
+                        "p_event_key": event_key, "p_message_id": message_id, "p_status": status,
+                        "p_recipient_id": str(item.get("recipient_id") or "")[:80] or None,
+                        "p_provider_timestamp": timestamp, "p_correlation_id": callback_correlation,
+                        "p_payload_digest": status_digest, "p_error_code": error_code,
+                    })
+                except HTTPException as exc:
+                    if exc.status_code == 409:
+                        ignored += 1
+                        continue
+                    raise
+                if isinstance(result, dict) and result.get("replayed") is True:
+                    duplicates += 1
+                else:
+                    accepted += 1
+    return {"received": True, "accepted": accepted, "duplicates": duplicates, "ignored": ignored,
+            "correlation_id": getattr(request.state, "correlation_id", str(uuid4()))}
+
+
 @router.post("/v1/admin/integrations/reconcile-payments", tags=["integrations"])
 async def reconcile_pending_payments(
     request: Request,
@@ -539,3 +641,41 @@ async def reconcile_pending_payments(
         }, {"id": "eq." + run_id})
     return {"run_id": run_id, "provider": "rajaongkir", "status": run_status, "correlation_id": correlation,
             "scanned": len(intents), "matched": matched, "mismatched": mismatched, "failed": failed, "summary": summary}
+
+async def _integration_worker_loop() -> None:
+    while True:
+        try:
+            if _provider_readiness()["providers"]["whatsapp_cloud"]["configured"]:
+                result = await _dispatch_batch(10, str(uuid4()))
+                await asyncio.sleep(1 if result.get("claimed", 0) else 15)
+            else:
+                await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            raise
+        except HTTPException as exc:
+            logger.warning("integration worker cycle deferred status=%s", exc.status_code)
+            await asyncio.sleep(30)
+        except Exception as exc:
+            logger.warning("integration worker cycle failed type=%s", type(exc).__name__)
+            await asyncio.sleep(30)
+
+
+def start_integration_worker() -> None:
+    global _worker_task
+    if _worker_task is not None and not _worker_task.done():
+        return
+    if _provider_readiness()["providers"]["whatsapp_cloud"]["configured"]:
+        _worker_task = asyncio.create_task(_integration_worker_loop(), name="otoclinic-integration-outbox")
+
+
+async def stop_integration_worker() -> None:
+    global _worker_task
+    if _worker_task is not None and not _worker_task.done():
+        _worker_task.cancel()
+        try:
+            await _worker_task
+        except asyncio.CancelledError:
+            pass
+    _worker_task = None
+
+

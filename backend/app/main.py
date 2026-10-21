@@ -1808,5 +1808,16 @@ app.include_router(shipping_router)
 from app.payments import router as payments_router
 app.include_router(payments_router)
 
+from app.integrations import router as integrations_router, start_integration_worker, stop_integration_worker
+app.include_router(integrations_router)
+
+@app.on_event("startup")
+async def start_commerce_integration_worker() -> None:
+    start_integration_worker()
+
+@app.on_event("shutdown")
+async def stop_commerce_integration_worker() -> None:
+    await stop_integration_worker()
+
 from app.integrations import router as integrations_router
 app.include_router(integrations_router)

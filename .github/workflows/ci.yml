@@ -158,6 +158,8 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261021015342_ec08_whatsapp_delivery_webhook.sql
       - name: Apply EC-08 provider acceptance and webhook race hardening
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261021015430_ec08_outbox_provider_acceptance_semantics.sql
+      - name: Apply EC-08 monotonic delivery status migration
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261021015723_ec08_monotonic_delivery_status.sql
       - name: Verify EC-08 RLS, grants, indexes and guarded functions
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/ec08_db_assertions.sql
       - name: Apply unknown-condition draft support
