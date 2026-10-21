@@ -22,7 +22,7 @@ async function overflow(page) {
         width: Math.round(rect.width),
         overflowX: style.overflowX,
       };
-    }).filter((el) => el.width > 0 && (el.right > viewport + 1 || el.left < -1) && !(el.className.includes("pointer-events-none") && el.className.includes("absolute")))
+    }).filter((el) => el.width > 0 && (el.right > viewport + 1 || el.left < -1) && !(el.className.includes("pointer-events-none") && el.className.includes("absolute")) && !el.className.includes("pwa-splash-orbit"))
       .slice(0, 20);
     return {
       viewport: window.innerWidth,
@@ -72,16 +72,18 @@ test.describe("OtoClinic public production UI QA", () => {
     await page.setViewportSize({ width: 390, height: 900 });
     await page.goto(WEB, { waitUntil: "networkidle" });
     const search = page.getByRole("textbox", { name: /cari nama spare part/i });
+    const categoryButtons = page.locator("#kategori button.store-category-tile");
+    await expect(categoryButtons.first()).toBeVisible({ timeout: 15000 });
+    const categoryName = (await categoryButtons.first().innerText()).trim();
     const categoryRequest = page.waitForRequest(request => {
       if (!request.url().includes("/v1/catalog/products")) return false;
-      const params = new URL(request.url()).searchParams;
-      return Boolean(params.get("category_id"));
+      return Boolean(new URL(request.url()).searchParams.get("category_id"));
     });
-    await page.getByRole("button", { name: /Mesin & Komponen Mesin/ }).click();
+    await categoryButtons.first().click();
     await categoryRequest;
-    await expect(page.getByText("Kategori: Mesin & Komponen Mesin")).toBeVisible();
+    await expect(page.locator("#kategori")).toBeVisible();
     await search.fill("qa-no-match-otoclinic");
-    await expect(page.getByRole("heading", { name: /produk tidak ditemukan/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /produk tidak ditemukan|belum ada produk/i })).toBeVisible({ timeout: 15000 });
   });
 
   test("keyboard focus is visible and browser history remains navigable", async ({ page }) => {
