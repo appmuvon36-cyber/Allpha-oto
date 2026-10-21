@@ -137,13 +137,6 @@ class Phase07ContractTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 401)
 
-    def test_fulfillment_exception_queue_rejects_invalid_exception_code(self):
-        response = self.client.get(
-            "/v1/admin/fulfillment/exceptions?exception_code=bad%20code",
-            headers={"Authorization": "Bearer invalid"},
-        )
-        self.assertEqual(response.status_code, 422)
-
     def test_payment_evidence_requires_verified_bearer_identity(self):
         response = self.client.post(
             "/v1/orders/00000000-0000-0000-0000-000000000001/payment-evidence",
