@@ -416,6 +416,8 @@ async def search_part_candidates(
     normalized_query = normalize_part_number(q)
     if len(normalized_query) < 2:
         raise HTTPException(status_code=422, detail="Masukkan minimal dua huruf atau angka yang dapat dicari.")
+    if vehicle_year is not None and not any((vehicle_variant_id, vehicle_model_id, vehicle_make_id)):
+        raise HTTPException(status_code=422, detail="Pilih merek, model, atau varian kendaraan saat menyertakan tahun.")
     safe_query = safe_search_term(q)
     variants = list(dict.fromkeys(term for term in (safe_query, normalized_query) if term))
 
@@ -554,7 +556,10 @@ async def search_part_candidates(
     ))
     candidates = ranked[:limit]
     candidate_ids = [str(item["product"].get("id")) for item in candidates if item["product"].get("id")]
-    media_by_product = await public_product_media(candidate_ids)
+    try:
+        media_by_product = await public_product_media(candidate_ids)
+    except HTTPException:
+        media_by_product = {}
     stock_by_product: dict[str, dict[str, Any]] = {}
     if candidate_ids:
         try:
