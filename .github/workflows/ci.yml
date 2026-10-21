@@ -195,6 +195,12 @@ jobs:
             echo "Both concurrent checkouts failed; expected exactly one successful reservation."
             exit 1
           fi
+          if [ "$status_a" -ne 0 ]; then
+            grep -q "insufficient_available_stock" /tmp/ec09-checkout-a.log || { cat /tmp/ec09-checkout-a.log; echo "Checkout A failed for an unexpected reason."; exit 1; }
+          fi
+          if [ "$status_b" -ne 0 ]; then
+            grep -q "insufficient_available_stock" /tmp/ec09-checkout-b.log || { cat /tmp/ec09-checkout-b.log; echo "Checkout B failed for an unexpected reason."; exit 1; }
+          fi
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/ec09_concurrency_assertions.sql
       - name: Apply unknown-condition draft support
         run: |
