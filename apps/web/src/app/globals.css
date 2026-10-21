@@ -58,3 +58,85 @@
  .promo-orbit-two{right:-20%;width:95%}
 }
 @media(prefers-reduced-motion:reduce){.collection-tile{transition:none}.collection-tile:hover{transform:none}}
+
+
+/* Front-end UI reference reconciliation — presentation-only layer.
+   The Vite reference is not copied as an app: its mock business state is excluded.
+   These styles are applied to the existing Next.js routes and live API-driven components. */
+:root {
+  color-scheme: light;
+  --color-ink: #101b2b;
+  --color-primary: #ef5b2a;
+  --color-primary-hover: #d94b20;
+  --color-primary-soft: #fff2ec;
+  --color-canvas: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+  --color-muted: #64748b;
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+}
+html { scroll-padding-top: 88px; }
+body { overflow-x: clip; -webkit-tap-highlight-color: transparent; }
+button, a, input, select, textarea { touch-action: manipulation; }
+button:not(:disabled), [role="button"] { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+input, select, textarea { max-width: 100%; }
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid #f6b39c;
+  outline-offset: 2px;
+}
+.store-header { box-shadow: 0 2px 12px rgb(16 27 43 / 4%); }
+.store-promo-banner {
+  min-height: 208px;
+  background: linear-gradient(112deg, #101b2b 0%, #18344a 56%, #34404b 100%);
+  box-shadow: 0 12px 28px rgb(16 27 43 / 10%);
+}
+.store-promo-banner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(ellipse at 88% 18%, rgb(239 91 42 / 24%), transparent 38%);
+  pointer-events: none;
+}
+.store-promo-copy { min-width: 0; }
+.store-category-tile { min-width: 0; box-shadow: 0 2px 8px rgb(16 27 43 / 3%); }
+.store-category-tile:focus-visible { outline-offset: 3px; }
+.store-product-card {
+  min-width: 0;
+  overflow: hidden;
+  border-color: var(--color-border);
+  box-shadow: 0 2px 8px rgb(16 27 43 / 3%);
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+.store-product-card:hover {
+  border-color: #f4b29a;
+  box-shadow: 0 10px 24px rgb(16 27 43 / 8%);
+}
+.store-shelf { scroll-margin-top: 92px; box-shadow: 0 2px 8px rgb(16 27 43 / 2%); }
+.store-request-panel { scroll-margin-top: 92px; }
+.store-bottom-nav {
+  padding-bottom: calc(7px + var(--safe-area-bottom));
+  backdrop-filter: blur(16px);
+}
+.store-bottom-nav a { min-height: 44px; }
+.store-bottom-nav a:focus-visible { border-radius: 10px; }
+.pwa-install-button { min-height: 40px; }
+.pwa-install-help { line-height: 1.55; }
+@media (max-width: 767px) {
+  html { scroll-padding-top: 76px; }
+  .store-promo-banner { min-height: 0; }
+  .store-promo-copy { max-width: 100%; }
+  .store-product-card { box-shadow: 0 1px 5px rgb(16 27 43 / 3%); }
+  .store-product-card:hover { transform: none; }
+  .store-shelf { border-radius: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
