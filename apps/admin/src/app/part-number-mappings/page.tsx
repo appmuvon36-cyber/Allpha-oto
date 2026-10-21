@@ -150,7 +150,7 @@ export default function PartNumberMappingsPage() {
           <label className="grid gap-1.5 text-sm font-semibold sm:col-span-2">Catatan review
             <input maxLength={1000} value={form.review_note} onChange={e=>setForm(v=>({...v,review_note:e.target.value}))} className="min-h-11 rounded-xl border border-slate-300 px-3 font-normal" placeholder="Catatan pemeriksaan sumber"/>
           </label>
-          <div className="flex items-end"><button disabled={busy||loading||!token} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white disabled:opacity-50"><ShieldCheck size={16}/>{busy?"Menyimpan…":"Simpan untuk review"}</button></div>
+          <div className="flex items-end"><button disabled={busy||loading||!token||!role} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white disabled:opacity-50"><ShieldCheck size={16}/>{busy?"Menyimpan…":"Simpan untuk review"}</button></div>
         </form>
       </section>
 
