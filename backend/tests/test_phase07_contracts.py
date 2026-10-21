@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.main import app
-from app.phase07 import CheckoutRequest, checkout
+from app.phase07 import CheckoutRequest, ManualShippingQuoteCreate, checkout
 
 
 class Phase07ContractTests(unittest.TestCase):
@@ -36,6 +36,7 @@ class Phase07ContractTests(unittest.TestCase):
             ("GET", "/v1/admin/orders"),
             ("GET", "/v1/admin/fulfillment/exceptions"),
             ("GET", "/v1/admin/orders/{order_id}/communications"),
+            ("POST", "/v1/admin/orders/{order_id}/manual-shipping-quote"),
             ("POST", "/v1/admin/orders/{order_id}/communications"),
             ("GET", "/v1/admin/payments"),
             ("GET", "/v1/admin/returns"),
@@ -109,6 +110,21 @@ class Phase07ContractTests(unittest.TestCase):
     def test_fulfillment_exception_queue_requires_verified_bearer_identity(self):
         response = self.client.get("/v1/admin/fulfillment/exceptions?limit=25&offset=0")
         self.assertEqual(response.status_code, 401)
+
+    def test_manual_shipping_quote_requires_verified_bearer_identity(self):
+        order_id = "00000000-0000-0000-0000-000000000001"
+        response = self.client.post(
+            f"/v1/admin/orders/{order_id}/manual-shipping-quote",
+            json={"amount": 25000, "carrier": "Manual", "service": "Konfirmasi staf", "note": "Tarif dikonfirmasi sebelum pembayaran"},
+            headers={"Idempotency-Key": "ec07-manual-quote-unauth-001"},
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_manual_shipping_quote_rejects_negative_or_fractional_idr(self):
+        with self.assertRaises(ValidationError):
+            ManualShippingQuoteCreate.model_validate({"amount": -1, "carrier": "Manual", "service": "Konfirmasi", "note": "Tarif dikonfirmasi"})
+        with self.assertRaises(ValidationError):
+            ManualShippingQuoteCreate.model_validate({"amount": 25000.5, "carrier": "Manual", "service": "Konfirmasi", "note": "Tarif dikonfirmasi"})
 
     def test_order_communication_history_requires_verified_bearer_identity(self):
         order_id = "00000000-0000-0000-0000-000000000001"
