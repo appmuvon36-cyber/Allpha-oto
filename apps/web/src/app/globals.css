@@ -496,3 +496,22 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     transform: none;
   }
 }
+
+
+/* Keep the DOM sequence aligned with the reference's mobile-first shopping journey. */
+@media (max-width: 767px) {
+  .store-home > #pencarian-sparepart { order: 1; }
+  .store-home > section[aria-label="Hero OtoClinic"] { order: 2; }
+  .store-home > #kendaraan-aktif { order: 3; }
+  .store-home > #kategori { order: 4; }
+  .store-home > section[aria-label="best_seller"],
+  .store-home > section[aria-label="popular"],
+  .store-home > section[aria-label="secondary"],
+  .store-home > section[aria-label="new_products"],
+  .store-home > section[aria-label="promotions"],
+  .store-home > section[aria-label="advertisements"] { order: 5; }
+  .store-home > #katalog { order: 6; }
+  .store-home > #cara-kerja { order: 7; }
+  .store-home > #permintaan { order: 8; }
+  .store-home > footer { order: 9; }
+}
