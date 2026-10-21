@@ -553,6 +553,29 @@ async def search_part_candidates(
         str(item["product"].get("name") or "").casefold(),
     ))
     candidates = ranked[:limit]
+    candidate_ids = [str(item["product"].get("id")) for item in candidates if item["product"].get("id")]
+    media_by_product = await public_product_media(candidate_ids)
+    stock_by_product: dict[str, dict[str, Any]] = {}
+    if candidate_ids:
+        try:
+            stock_rows = await supabase_rpc("oto_public_stock_status", {"p_product_ids": candidate_ids})
+            stock_by_product = {
+                str(item["product_id"]): {"stock_status": item["stock_status"], "stock_checked_at": item.get("checked_at")}
+                for item in stock_rows if item.get("product_id")
+            }
+        except HTTPException:
+            # Search relevance must remain available if optional public stock summary is unavailable.
+            stock_by_product = {}
+    for item in candidates:
+        product = item["product"]
+        product_id = str(product.get("id") or "")
+        product["images"] = media_by_product.get(product_id, [])
+        product["image_url"] = next(
+            (media["url"] for media in product["images"] if media.get("is_primary")),
+            product["images"][0]["url"] if product["images"] else None,
+        )
+        product["stock_status"] = stock_by_product.get(product_id, {}).get("stock_status", "unverified")
+        product["stock_checked_at"] = stock_by_product.get(product_id, {}).get("stock_checked_at")
     return {
         "query": q,
         "normalized_query": normalized_query,
