@@ -66,9 +66,9 @@ begin
   v_outcome := nullif(btrim(p_payload->>'outcome'),'');
   v_summary := nullif(btrim(p_payload->>'summary'),'');
   v_reference := nullif(btrim(p_payload->>'external_reference'),'');
-  if v_channel not in ('whatsapp','phone','email','internal_note')
-     or v_direction not in ('outbound','inbound','internal')
-     or v_outcome not in ('planned','attempted','sent','received','failed','not_sent')
+  if v_channel is null or v_channel not in ('whatsapp','phone','email','internal_note')
+     or v_direction is null or v_direction not in ('outbound','inbound','internal')
+     or v_outcome is null or v_outcome not in ('planned','attempted','sent','received','failed','not_sent')
      or v_summary is null or length(v_summary)>2000
      or (v_reference is not null and length(v_reference)>300) then
     raise exception using errcode='22023',message='communication_payload_invalid';
