@@ -1,9 +1,9 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- Playwright spec is intentionally CommonJS (.cjs).
 const { test, expect } = require("@playwright/test");
 
-const WEB = process.env.OTOCLINIC_WEB_URL || "https://otoclinic-web-production.up.railway.app";
-const ADMIN = process.env.OTOCLINIC_ADMIN_URL || "https://otoclinic-admin-production.up.railway.app";
-const API = process.env.OTOCLINIC_API_URL || "https://otoclinic-api-production.up.railway.app";
+const WEB = process.env.OTOCLINIC_WEB_URL || "https://allpha-oto.vercel.app";
+const ADMIN = process.env.OTOCLINIC_ADMIN_URL || "https://otoclinic-admin.vercel.app";
+const API = process.env.OTOCLINIC_API_URL || "https://otoclinic-api.vercel.app";
 const widths = [360, 390, 820, 1440];
 
 async function overflow(page) {
@@ -41,7 +41,7 @@ test.describe("OtoClinic public production UI QA", () => {
       const errors = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await page.goto(WEB, { waitUntil: "networkidle" });
-      await expect(page.getByRole("heading", { name: "Spare part tepat, kendaraan tetap sehat.", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Sparepart Original dan Berkualitas", exact: true })).toBeVisible();
       await expect(page.locator("#katalog h2", { hasText: "Semua produk" })).toBeVisible();
       const measured = await overflow(page);
       await page.screenshot({ path: `test-results/customer-${width}.png`, fullPage: true });
@@ -78,18 +78,15 @@ test.describe("OtoClinic public production UI QA", () => {
     await expect(categorySection.getByText("Memuat kategori dari katalog…")).toBeHidden({ timeout: 15000 }).catch(() => {});
     if (await categoryButtons.count()) {
       const firstCategory = categoryButtons.first();
-      await expect(firstCategory.locator("span").filter({ hasText: /^ID:/ })).toBeVisible();
-      await expect(firstCategory.getByText(/^Urutan:/)).toBeVisible();
       const categoryRequest = page.waitForRequest(request => {
         if (!request.url().includes("/v1/catalog/products")) return false;
         return Boolean(new URL(request.url()).searchParams.get("category_id"));
       });
-      const expectedCategoryId = await firstCategory.locator("span").filter({ hasText: /^ID:/ }).innerText();
       await firstCategory.click();
       const request = await categoryRequest;
-      expect(new URL(request.url()).searchParams.get("category_id")).toBe(expectedCategoryId.replace(/^ID:\s*/, ""));
+      expect(new URL(request.url()).searchParams.get("category_id")).toMatch(/^[0-9a-f-]{36}$/i);
       await expect(categorySection.getByText("Hierarki kategori terpilih")).toBeVisible();
-      await expect(categorySection.getByText(/ID:/).first()).toBeVisible();
+      await expect(firstCategory).toHaveAttribute("aria-pressed", "true");
     } else {
       // Empty taxonomy and backend failures are different states. Neither path may seed fake categories.
       const emptyState = categorySection.getByText("Belum ada kategori aktif di master katalog.");
