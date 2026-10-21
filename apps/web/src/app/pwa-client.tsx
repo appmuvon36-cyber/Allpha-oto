@@ -44,7 +44,7 @@ export function PwaSplashIntro(){
     <div className="pwa-splash-orbit pwa-splash-orbit-one" aria-hidden="true"/>
     <div className="pwa-splash-orbit pwa-splash-orbit-two" aria-hidden="true"/>
     <div className="pwa-splash-art-wrap">
-      <img src="/images/otoclinic-splash-art.jpg" alt="" fetchPriority="high" decoding="async"/>
+      <img src="https://raw.githubusercontent.com/fadliansyah36/Front-end-UI-Otoclinic/main/public/otoclinic_splash_art.jpg" alt="" fetchPriority="high" decoding="async"/>
     </div>
     <strong className="pwa-splash-brand">OtoClinic</strong>
     <span className="pwa-splash-tagline">Spare part otomotif</span>
