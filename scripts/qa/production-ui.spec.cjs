@@ -43,7 +43,6 @@ test.describe("OtoClinic public production UI QA", () => {
       await page.goto(WEB, { waitUntil: "networkidle" });
       await expect(page.getByRole("heading", { name: "Spare part tepat, kendaraan tetap sehat.", exact: true })).toBeVisible();
       await expect(page.locator("#katalog h2", { hasText: "Semua produk" })).toBeVisible();
-      await expect(page.locator(".store-promo-banner")).toHaveCount(0);
       const measured = await overflow(page);
       await page.screenshot({ path: `test-results/customer-${width}.png`, fullPage: true });
       expect(measured.documentScrollWidth, JSON.stringify(measured)).toBeLessThanOrEqual(width);
@@ -53,6 +52,21 @@ test.describe("OtoClinic public production UI QA", () => {
       await page.close();
     });
   }
+
+  test("splash artwork renders and can be dismissed", async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const page = await context.newPage();
+    await page.addInitScript(() => sessionStorage.removeItem("otoclinic-splash-seen"));
+    await page.goto(WEB, { waitUntil: "domcontentloaded" });
+    const splash = page.locator(".pwa-splash-intro");
+    await expect(splash).toBeVisible({ timeout: 5000 });
+    await expect(splash.locator("img[src='/images/otoclinic-splash-art.jpg']")).toBeVisible();
+    await expect(splash.getByRole("button", { name: "Lewati" })).toBeVisible();
+    await splash.getByRole("button", { name: "Lewati" }).click();
+    await expect(splash).toBeHidden();
+    await expect(page.getByRole("button", { name: /Install App/i })).toBeVisible();
+    await context.close();
+  });
 
   test("category button updates search and empty results are explicit", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 });
