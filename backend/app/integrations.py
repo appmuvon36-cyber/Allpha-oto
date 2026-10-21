@@ -396,7 +396,7 @@ async def set_whatsapp_consent(
     idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
     identity: dict[str, Any] = Depends(require_active_profile),
 ) -> dict[str, Any]:
-    if identity.get("role") != "customer":
+    if identity.get("profile", {}).get("role") != "customer":
         raise HTTPException(status_code=403, detail="WhatsApp notification preferences require a customer account.")
     if request.opt_in and request.consent_version != CONSENT_VERSION:
         raise HTTPException(status_code=422, detail="Baca dan setujui ketentuan notifikasi WhatsApp yang berlaku.")
@@ -410,7 +410,7 @@ async def set_whatsapp_consent(
 
 @router.get("/v1/notifications/whatsapp-consent", tags=["notifications"])
 async def get_whatsapp_consent(identity: dict[str, Any] = Depends(require_active_profile)) -> dict[str, Any]:
-    if identity.get("role") != "customer":
+    if identity.get("profile", {}).get("role") != "customer":
         raise HTTPException(status_code=403, detail="WhatsApp notification preferences require a customer account.")
     rows = await _service_get("oto_notification_preferences", {
         "select": "whatsapp_opt_in,consent_version,consented_at,revoked_at,updated_at",
