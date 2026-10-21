@@ -220,7 +220,7 @@ async def supabase_get(
 
 async def supabase_rpc(function: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
     """Call an explicitly allowlisted public, read-only RPC using the anon key."""
-    if function not in {"oto_public_stock_status", "oto_public_product_categories"}:
+    if function not in {"oto_public_stock_status", "oto_public_product_categories", "oto_public_homepage_best_sellers", "oto_public_homepage_popular"}:
         raise HTTPException(status_code=422, detail="Unsupported public RPC.")
     supabase_url, anon_key = require_supabase_configuration()
     headers = {"apikey": anon_key, "Authorization": f"Bearer {anon_key}", "Content-Type": "application/json", "Accept": "application/json"}
@@ -241,6 +241,26 @@ async def supabase_rpc(function: str, payload: dict[str, Any]) -> list[dict[str,
         raise HTTPException(status_code=503, detail="Public catalog availability request timed out.") from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="Could not reach public catalog availability.") from exc
+
+
+async def record_product_search_events(query: str, product_ids: list[str]) -> None:
+    """Record only products returned by a real search; service credentials never leave the API."""
+    if not settings.supabase_service_role_key or not product_ids:
+        return
+    supabase_url = settings.supabase_url.rstrip("/")
+    if not supabase_url:
+        return
+    normalized = re.sub(r"[^a-z0-9]+", " ", query.casefold()).strip()[:100]
+    if len(normalized) < 2:
+        return
+    payload = [{"normalized_query": normalized, "product_id": product_id} for product_id in list(dict.fromkeys(product_ids))[:20]]
+    headers = {"apikey": settings.supabase_service_role_key, "Authorization": f"Bearer {settings.supabase_service_role_key}", "Content-Type": "application/json", "Prefer": "return=minimal"}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(f"{supabase_url}/rest/v1/oto_product_search_events", headers=headers, json=payload)
+    except httpx.HTTPError:
+        # Search remains available if optional analytics logging is temporarily unavailable.
+        return
 
 
 async def supabase_write(method: str, table: str, access_token: str, payload: dict[str, Any], filters: dict[str, str] | None = None) -> list[dict[str, Any]]:
@@ -556,6 +576,7 @@ async def search_part_candidates(
     ))
     candidates = ranked[:limit]
     candidate_ids = [str(item["product"].get("id")) for item in candidates if item["product"].get("id")]
+    await record_product_search_events(q, candidate_ids)
     try:
         media_by_product = await public_product_media(candidate_ids)
     except HTTPException:
@@ -2256,24 +2277,18 @@ async def get_storefront_homepage() -> dict[str, Any]:
         elif key == "secondary":
             rows = await supabase_get("products", {"select":"id,sku,slug,name,brand,part_number,category,condition,retail_price,published_at","status":"eq.published","condition":"in.(used,refurbished,remanufactured,damaged_for_parts)","order":"published_at.desc.nullslast","limit":str(limit)})
         elif key == "best_seller":
-            sales = await supabase_get("oto_order_items", {"select":"product_id,quantity,order_id,oto_orders!inner(status)","oto_orders.status":"in.(paid,processing,shipped,delivered)","limit":"5000"})
-            tally: dict[str,int] = {}
-            for sale in sales:
-                pid = str(sale.get("product_id") or "")
-                if pid: tally[pid] = tally.get(pid,0) + int(sale.get("quantity") or 0)
-            ordered = sorted(tally, key=lambda pid: tally[pid], reverse=True)[:limit]
+            sales = await supabase_rpc("oto_public_homepage_best_sellers", {"p_limit": limit})
+            ordered = [str(row.get("product_id")) for row in sales if row.get("product_id")]
+            tally = {str(row.get("product_id")): int(row.get("units_sold") or 0) for row in sales if row.get("product_id")}
             rows = await supabase_get("products", {"select":"id,sku,slug,name,brand,part_number,category,condition,retail_price,published_at","status":"eq.published","id":"in.("+",".join(ordered)+")","limit":str(limit)}) if ordered else []
             rows.sort(key=lambda row: tally.get(str(row.get("id")),0), reverse=True)
             for row in rows: row["verified_units_sold"] = tally.get(str(row.get("id")),0)
         elif key == "popular":
-            events = await supabase_get("oto_product_search_events", {"select":"product_id","product_id":"not.is.null","created_at":"gte."+(datetime.now(timezone.utc).replace(day=1,hour=0,minute=0,second=0,microsecond=0)).isoformat(),"limit":"5000"})
-            tally: dict[str,int] = {}
-            for event in events:
-                pid = str(event.get("product_id") or "")
-                if pid: tally[pid] = tally.get(pid,0) + 1
-            ordered = sorted(tally, key=lambda pid:tally[pid], reverse=True)[:limit]
+            events = await supabase_rpc("oto_public_homepage_popular", {"p_since": datetime.now(timezone.utc).replace(day=1,hour=0,minute=0,second=0,microsecond=0).isoformat(), "p_limit": limit})
+            ordered = [str(row.get("product_id")) for row in events if row.get("product_id")]
+            tally = {str(row.get("product_id")): int(row.get("search_events") or 0) for row in events if row.get("product_id")}
             rows = await supabase_get("products", {"select":"id,sku,slug,name,brand,part_number,category,condition,retail_price,published_at","status":"eq.published","id":"in.("+",".join(ordered)+")","limit":str(limit)}) if ordered else []
-            rows.sort(key=lambda row:tally.get(str(row.get("id")),0), reverse=True)
+            rows.sort(key=lambda row: tally.get(str(row.get("id")),0), reverse=True)
             for row in rows: row["verified_search_events"] = tally.get(str(row.get("id")),0)
         elif key in {"promotions","advertisements"}:
             kind = "promotion" if key == "promotions" else "advertisement"
