@@ -60,7 +60,7 @@ test.describe("OtoClinic public production UI QA", () => {
     await page.goto(WEB, { waitUntil: "domcontentloaded" });
     const splash = page.locator(".pwa-splash-intro");
     await expect(splash).toBeVisible({ timeout: 5000 });
-    await expect(splash.locator("img[src='/images/otoclinic-splash-art.jpg']")).toBeVisible();
+    await expect(splash.locator("img[src='https://raw.githubusercontent.com/fadliansyah36/Front-end-UI-Otoclinic/main/public/otoclinic_splash_art.jpg']")).toBeVisible();
     await expect(splash.getByRole("button", { name: "Lewati" })).toBeVisible();
     await splash.getByRole("button", { name: "Lewati" }).click();
     await expect(splash).toBeHidden();
