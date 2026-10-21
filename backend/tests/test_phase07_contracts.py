@@ -34,6 +34,7 @@ class Phase07ContractTests(unittest.TestCase):
             ("POST", "/v1/admin/inventory/mutations"),
             ("POST", "/v1/admin/inventory/expire-reservations"),
             ("GET", "/v1/admin/orders"),
+            ("GET", "/v1/admin/fulfillment/exceptions"),
             ("GET", "/v1/admin/payments"),
             ("GET", "/v1/admin/returns"),
             ("POST", "/v1/admin/orders/{order_id}/mutations"),
@@ -102,6 +103,17 @@ class Phase07ContractTests(unittest.TestCase):
             headers={"Idempotency-Key": "phase07-inventory-test-001"},
         )
         self.assertEqual(response.status_code, 401)
+
+    def test_fulfillment_exception_queue_requires_verified_bearer_identity(self):
+        response = self.client.get("/v1/admin/fulfillment/exceptions?limit=25&offset=0")
+        self.assertEqual(response.status_code, 401)
+
+    def test_fulfillment_exception_queue_rejects_invalid_exception_code(self):
+        response = self.client.get(
+            "/v1/admin/fulfillment/exceptions?exception_code=bad%20code",
+            headers={"Authorization": "Bearer invalid"},
+        )
+        self.assertEqual(response.status_code, 422)
 
     def test_payment_evidence_requires_verified_bearer_identity(self):
         response = self.client.post(
