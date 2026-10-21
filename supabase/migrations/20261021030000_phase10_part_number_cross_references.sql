@@ -52,7 +52,7 @@ create policy "public reads approved part number cross references"
 drop policy if exists "catalog staff manages part number cross references" on public.part_number_cross_references;
 create policy "catalog staff manages part number cross references"
   on public.part_number_cross_references for all to authenticated
-  using (public.oto_has_staff_role(array['admin'::public.oto_user_role, 'catalog_editor'::public.oto_user_role, 'moderator'::public.oto_user_role]))
+  using (public.oto_has_staff_role(ARRAY['admin','catalog_editor','moderator']::public.oto_user_role[]))
   with check (public.oto_has_staff_role(array['admin'::public.oto_user_role, 'catalog_editor'::public.oto_user_role, 'moderator'::public.oto_user_role));
 
 create or replace function public.oto_audit_part_number_cross_reference()
@@ -66,7 +66,7 @@ declare
   mapping_id uuid;
   next_status text;
 begin
-  if actor is null or not public.oto_has_staff_role(array['admin'::public.oto_user_role, 'catalog_editor'::public.oto_user_role, 'moderator'::public.oto_user_role]) then
+  if actor is null or not public.oto_has_staff_role(ARRAY['admin','catalog_editor','moderator']::public.oto_user_role[]) then
     raise exception 'Active catalog staff role required' using errcode = '42501';
   end if;
 
