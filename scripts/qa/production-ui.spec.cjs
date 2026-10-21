@@ -87,7 +87,7 @@ test.describe("OtoClinic public production UI QA", () => {
       const expectedCategoryId = await firstCategory.locator("span").filter({ hasText: /^ID:/ }).innerText();
       await firstCategory.click();
       const request = await categoryRequest;
-      expect(new URL(request.url()).searchParams.get("category_id")).toBe(expectedCategoryId.replace(/^ID:\\s*/, ""));
+      expect(new URL(request.url()).searchParams.get("category_id")).toBe(expectedCategoryId.replace(/^ID:\s*/, ""));
       await expect(categorySection.getByText("Hierarki kategori terpilih")).toBeVisible();
       await expect(categorySection.getByText(/ID:/).first()).toBeVisible();
     } else {
