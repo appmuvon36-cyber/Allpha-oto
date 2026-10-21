@@ -546,6 +546,39 @@ async def list_admin_orders(
     return {"items": rows, "count": len(rows), "limit": limit, "offset": offset, "next_offset": offset + limit if len(rows) == limit else None}
 
 
+@router.get("/v1/admin/fulfillment/exceptions", tags=["fulfillment"])
+async def list_fulfillment_exceptions(
+    status: str | None = Query(default=None, max_length=32),
+    exception_code: str | None = Query(default=None, min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$"),
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0, le=10000),
+    identity: dict[str, Any] = Depends(require_roles("admin", "order_manager")),
+) -> dict[str, Any]:
+    """Return a server-filtered, paginated queue of unresolved shipping exceptions."""
+    allowed = {"pending_payment","payment_review","paid","processing","shipped","delivered","cancelled","return_requested","returned","partially_returned"}
+    if status and status not in allowed:
+        raise HTTPException(status_code=422, detail="Order status filter is invalid.")
+    params = {
+        "select": "id,customer_user_id,status,subtotal,shipping_fee,total_amount,currency,tracking_code,shipping_carrier,shipping_service,shipping_exception_code,shipping_exception_note,shipping_last_event_at,sales_channel,created_at,updated_at",
+        "shipping_exception_code": "not.is.null",
+        "order": "shipping_last_event_at.desc.nullslast,created_at.desc",
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if status:
+        params["status"] = f"eq.{status}"
+    if exception_code:
+        params["shipping_exception_code"] = f"eq.{exception_code}"
+    rows = await supabase_get("oto_orders", params, identity["_access_token"])
+    return {
+        "items": rows,
+        "count": len(rows),
+        "limit": limit,
+        "offset": offset,
+        "next_offset": offset + limit if len(rows) == limit else None,
+    }
+
+
 @router.get("/v1/admin/payments", tags=["payments"])
 async def list_admin_payments(
     status: str | None = Query(default="pending_review", max_length=32),
