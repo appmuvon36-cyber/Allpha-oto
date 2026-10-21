@@ -35,3 +35,75 @@ begin
   end if;
 end $$;
 select 'EC-08 RLS, grants, indexes and guarded functions verified' as result;
+
+-- Transactional EC-08 behavior checks use only the disposable CI database.
+do $ec08$
+declare
+  v_admin uuid := '00000000-0000-0000-0000-000000000801';
+  v_customer uuid := '00000000-0000-0000-0000-000000000802';
+  v_order uuid := '00000000-0000-0000-0000-000000000803';
+  v_first jsonb; v_replay jsonb; v_claim jsonb; v_result jsonb; v_pref jsonb;
+  v_id uuid; v_lock uuid;
+begin
+  insert into auth.users(id,email) values(v_admin,'ec08-admin-fixture@example.invalid'),(v_customer,'ec08-customer-fixture@example.invalid')
+  on conflict(id) do nothing;
+  insert into public.user_profiles(id,role,is_active) values(v_admin,'admin',true),(v_customer,'customer',true)
+  on conflict(id) do update set role=excluded.role,is_active=excluded.is_active;
+
+  perform set_config('request.jwt.claims','{"role":"service_role"}',true);
+  v_first := public.oto_integration_outbox_enqueue(
+    'ec08-test-order-status-001','whatsapp_cloud','whatsapp_template','ec08-correlation-001','order',v_order,
+    '{"to":"6281234567890","template_name":"order_status","language_code":"id","parameters":["00000803","dikirim"]}'::jsonb,
+    repeat('a',64)
+  );
+  v_replay := public.oto_integration_outbox_enqueue(
+    'ec08-test-order-status-001','whatsapp_cloud','whatsapp_template','ec08-correlation-002','order',v_order,
+    '{"to":"6281234567890","template_name":"order_status","language_code":"id","parameters":["00000803","dikirim"]}'::jsonb,
+    repeat('a',64)
+  );
+  if coalesce((v_first->>'replayed')::boolean,true) or coalesce((v_replay->>'replayed')::boolean,false) is not true then
+    raise exception 'outbox enqueue replay contract failed';
+  end if;
+  begin
+    perform public.oto_integration_outbox_enqueue(
+      'ec08-test-order-status-001','whatsapp_cloud','whatsapp_template','ec08-correlation-003','order',v_order,
+      '{"to":"6281234567890","template_name":"order_status","language_code":"id","parameters":["changed","dikirim"]}'::jsonb,
+      repeat('b',64)
+    );
+    raise exception 'outbox conflicting replay was accepted';
+  exception when unique_violation then null;
+  end;
+
+  v_claim := public.oto_integration_outbox_claim(10,90);
+  if jsonb_array_length(v_claim) <> 1 then raise exception 'outbox claim did not return exactly one row'; end if;
+  v_id := (v_claim->0->>'id')::uuid;
+  v_lock := (v_claim->0->>'lock_token')::uuid;
+  v_result := public.oto_integration_outbox_fail(v_id,v_lock,'provider_transient',true);
+  if v_result->>'status' <> 'retry' then raise exception 'transient outbox failure did not schedule retry'; end if;
+  if (v_result->>'next_attempt_at')::timestamptz <= now() then raise exception 'outbox retry backoff was not scheduled in the future'; end if;
+  v_result := public.oto_integration_outbox_requeue(v_id,v_admin,'ec08-requeue-request-001');
+  if v_result->>'status' <> 'pending' then raise exception 'admin requeue did not return outbox to pending'; end if;
+  v_claim := public.oto_integration_outbox_claim(10,90);
+  if jsonb_array_length(v_claim) <> 1 then raise exception 'requeued outbox item was not claimable'; end if;
+  v_id := (v_claim->0->>'id')::uuid;
+  v_lock := (v_claim->0->>'lock_token')::uuid;
+  v_result := public.oto_integration_outbox_fail(v_id,v_lock,'provider_permanent',false);
+  if v_result->>'status' <> 'dead_letter' then raise exception 'permanent outbox failure did not dead-letter'; end if;
+
+  perform set_config('request.jwt.claim.sub',v_customer::text,true);
+  perform set_config('request.jwt.claims','{"role":"authenticated","sub":"00000000-0000-0000-0000-000000000802"}',true);
+  v_pref := public.oto_whatsapp_consent_set(true,'whatsapp-order-status-v1','ec08-consent-request-001');
+  if v_pref->>'whatsapp_opt_in' <> 'true' or v_pref->>'replayed' <> 'false' then raise exception 'customer consent write failed'; end if;
+  v_pref := public.oto_whatsapp_consent_set(true,'whatsapp-order-status-v1','ec08-consent-request-001');
+  if v_pref->>'replayed' <> 'true' then raise exception 'customer consent replay was not idempotent'; end if;
+  begin
+    perform public.oto_whatsapp_consent_set(false,'whatsapp-order-status-v1','ec08-consent-request-001');
+    raise exception 'consent request ID accepted a conflicting payload';
+  exception when unique_violation then null;
+  end;
+  if (select count(*) from public.audit_logs where actor_user_id=v_customer and request_id='ec08-consent-request-001') <> 1 then
+    raise exception 'consent replay wrote duplicate audit rows';
+  end if;
+end;
+$ec08$;
+select 'EC-08 outbox retry, dead-letter, replay, consent and audit verified' as result;

@@ -19,6 +19,9 @@ language sql immutable as $fn$ select string_to_array(name,'/') $fn$;
 create or replace function auth.uid() returns uuid
 language sql stable
 as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+create or replace function auth.jwt() returns jsonb
+language sql stable
+as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;
 
 do $$ begin
   create type public.oto_user_role as enum ('customer','supplier','catalog_editor','inventory_manager','order_manager','moderator','admin');
