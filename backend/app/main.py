@@ -647,7 +647,7 @@ async def create_part_number_mapping(
         raise HTTPException(status_code=422, detail="Jenis relasi nomor part tidak didukung.")
     if request.source_type not in allowed_sources:
         raise HTTPException(status_code=422, detail="Jenis sumber tidak termasuk daftar sumber tepercaya yang diizinkan.")
-    if not re.match(r"^https?://[^\\s]+$", request.source_url.strip(), flags=re.IGNORECASE):
+    if not re.match(r"^https?://[^\s]+$", request.source_url.strip(), flags=re.IGNORECASE):
         raise HTTPException(status_code=422, detail="URL sumber harus berupa tautan HTTP/HTTPS yang valid.")
     if normalize_part_number(request.canonical_part_number) == normalize_part_number(request.alternate_part_number):
         raise HTTPException(status_code=422, detail="Nomor part kanonis dan alternatif tidak boleh identik setelah normalisasi.")
