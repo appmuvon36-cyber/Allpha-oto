@@ -107,6 +107,7 @@ export default function AdminPage() {
     { key: "supplier_offers_review", label: "Review penawaran", href: "/suppliers", icon: ClipboardCheck },
     { key: "supplier_documents_review", label: "Review dokumen", href: "/suppliers", icon: FileClock },
     { key: "orders_open", label: "Pesanan terbuka", href: "/inventory-orders", icon: ClipboardList },
+    { key: "integrations", label: "Integrasi & rekonsiliasi", href: "/integrations", icon: Activity },
     { key: "payment_reviews", label: "Review pembayaran", href: "/inventory-orders", icon: CreditCard },
     { key: "returns_open", label: "Retur & refund", href: "/inventory-orders", icon: RotateCcw },
   ];

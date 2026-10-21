@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     rajaongkir_quote_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     # International WhatsApp Business number (digits with country code, e.g. 62...).
     whatsapp_business_phone: str = ""
+    # Optional WhatsApp Cloud API adapter; never expose these values to the browser.
+    whatsapp_cloud_api_token: str = ""
+    whatsapp_phone_number_id: str = ""
+    whatsapp_graph_api_version: str = ""
+    whatsapp_order_status_template: str = ""
+    whatsapp_template_language: str = "id"
+    integration_worker_secret: str = ""
     # RajaOngkir/Komerce Payment API; credentials are server-side only.
     rajaongkir_payment_api_key: str = ""
     rajaongkir_payment_environment: str = "sandbox"
@@ -62,6 +69,16 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID"],
 )
+
+
+@app.middleware("http")
+async def attach_correlation_id(request, call_next):
+    supplied = request.headers.get("X-Request-ID", "").strip()
+    correlation_id = supplied if re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", supplied) else str(uuid4())
+    request.state.correlation_id = correlation_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = correlation_id
+    return response
 
 bearer_scheme = HTTPBearer(auto_error=False)
 PRODUCT_CONDITIONS = {
@@ -1788,3 +1805,6 @@ app.include_router(shipping_router)
 
 from app.payments import router as payments_router
 app.include_router(payments_router)
+
+from app.integrations import router as integrations_router
+app.include_router(integrations_router)

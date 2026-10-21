@@ -309,6 +309,9 @@ async def _apply_verified_status(event_key: str, provider_order_id: str, transac
 async def rajaongkir_webhook(request: Request) -> dict[str, Any]:
     _callback_ready()
     raw_body = await request.body()
+    if len(raw_body) > 65536:
+        raise HTTPException(status_code=413, detail="Payment callback payload is too large.")
+    correlation_id = getattr(request.state, "correlation_id", str(uuid4()))
     supplied = request.headers.get("X-Callback-Api-Key", "").strip()
     expected = hmac.new(settings.rajaongkir_payment_callback_secret.encode(), raw_body, hashlib.sha256).hexdigest()
     if not supplied or not hmac.compare_digest(expected, supplied):
@@ -338,7 +341,7 @@ async def rajaongkir_webhook(request: Request) -> dict[str, Any]:
     digest = hashlib.sha256(raw_body).hexdigest()
     event_key = str(_field(data, "event_id", "callback_id", "payment_id", "id") or f"{provider_order_id}:{status}:{digest[:24]}")
     await _apply_verified_status(event_key, str(provider_order_id), str(payment_id) if payment_id else None, status, amount, digest)
-    return {"received": True}
+    return {"received": True, "correlation_id": correlation_id}
 
 
 __all__ = ["router"]
