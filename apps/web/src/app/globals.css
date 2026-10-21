@@ -216,3 +216,100 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   .pwa-splash-art-wrap, .pwa-splash-orbit, .pwa-splash-progress span { animation: none !important; }
   .pwa-splash-intro { transition: none; }
 }
+
+
+/* Phase 09 — align storefront hero with the approved compact marketplace reference. */
+.store-promo-banner {
+  padding: 1.5rem !important;
+  border: 1px solid rgba(148,163,184,.22);
+  box-shadow: 0 8px 24px rgba(16,27,43,.08);
+}
+.store-promo-banner > img.store-promo-photo {
+  inset: auto 0 0 auto !important;
+  width: 48% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  opacity: .88 !important;
+  z-index: -1;
+  mask-image: linear-gradient(to right, transparent 0%, black 18%);
+}
+.store-promo-banner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(90deg, #101b2b 0%, #101b2b 45%, rgba(16,27,43,.35) 100%);
+}
+.store-promo-banner > .relative.grid {
+  display: block !important;
+  max-width: 62%;
+}
+.store-promo-banner .store-promo-copy h2 {
+  font-size: clamp(1.45rem, 3.2vw, 2.45rem) !important;
+  line-height: 1.18 !important;
+}
+.store-promo-banner .store-promo-copy > span {
+  color: #fb923c !important;
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.store-promo-banner .store-promo-copy p {
+  font-size: clamp(.875rem, 1.4vw, 1.125rem) !important;
+  line-height: 1.55 !important;
+}
+.store-promo-banner .store-promo-copy > div:last-child {
+  margin-top: 1rem !important;
+}
+.store-promo-banner .store-promo-copy > div:last-child > span {
+  display: none;
+}
+.store-promo-banner .store-promo-copy + div {
+  display: none !important;
+}
+.store-search {
+  min-height: 58px !important;
+  border-radius: 1.25rem !important;
+  background: #f1f5f9 !important;
+}
+.store-search input {
+  font-size: 1rem !important;
+}
+.mobile-bottom-nav {
+  padding-bottom: max(.5rem, env(safe-area-inset-bottom));
+}
+@media (max-width: 639px) {
+  .store-promo-banner {
+    min-height: 236px;
+    padding: 1.5rem !important;
+    border-radius: 1.5rem !important;
+  }
+  .store-promo-banner > img.store-promo-photo {
+    width: 46% !important;
+    opacity: .72 !important;
+  }
+  .store-promo-banner > .relative.grid {
+    max-width: 74%;
+  }
+  .store-promo-banner .store-promo-copy h2 {
+    font-size: clamp(1.4rem, 6vw, 1.8rem) !important;
+    line-height: 1.18 !important;
+  }
+  .store-promo-banner .store-promo-copy p {
+    font-size: .875rem !important;
+    line-height: 1.45 !important;
+  }
+  .store-promo-banner .store-promo-copy > div:nth-of-type(2) {
+    margin-top: 1rem !important;
+  }
+  .store-promo-banner .store-promo-copy > div:nth-of-type(2) a {
+    min-height: 42px !important;
+    padding: .65rem 1rem !important;
+  }
+}
+@media (min-width: 640px) and (max-width: 1023px) {
+  .store-promo-banner > .relative.grid { max-width: 68%; }
+}
