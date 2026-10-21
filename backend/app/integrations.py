@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 
 import httpx
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app.main import require_active_profile, require_roles, require_supabase_configuration, settings
