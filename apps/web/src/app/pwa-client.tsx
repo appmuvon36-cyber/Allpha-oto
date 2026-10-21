@@ -16,8 +16,8 @@ export function PwaSplashIntro(){
   const [visible,setVisible]=useState(false);
   const [closing,setClosing]=useState(false);
   useEffect(()=>{
-    let closeTimer:ReturnType<typeof setTimeout>|undefined;
-    let hideTimer:ReturnType<typeof setTimeout>|undefined;
+    let closeTimer:number|undefined;
+    let hideTimer:number|undefined;
     try{
       if(window.sessionStorage.getItem("otoclinic-splash-seen")==="1")return;
       setVisible(true);
