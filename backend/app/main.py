@@ -2205,3 +2205,126 @@ async def stop_commerce_integration_worker() -> None:
 
 from app.integrations import router as integrations_router
 app.include_router(integrations_router)
+
+
+# Homepage merchandising: public read, role-protected admin write.
+class HomepageSectionConfig(BaseModel):
+    enabled: bool
+    sort_order: int = Field(ge=0, le=100)
+    limit: int = Field(ge=1, le=24)
+    model_config = {"extra": "forbid"}
+
+class HomepageSettingsUpdate(BaseModel):
+    sections: dict[str, HomepageSectionConfig]
+    model_config = {"extra": "forbid"}
+
+class HomepageCampaignCreate(BaseModel):
+    title: str = Field(min_length=2, max_length=160)
+    description: str | None = Field(default=None, max_length=1000)
+    kind: str = Field(pattern=r"^(promotion|advertisement)$")
+    status: str = Field(default="draft", pattern=r"^(draft|scheduled|active|paused|ended)$")
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    product_ids: list[UUID] = Field(default_factory=list, max_length=100)
+    target_url: str | None = Field(default=None, max_length=2048)
+    priority: int = Field(default=100, ge=0, le=10000)
+    model_config = {"extra": "forbid"}
+
+HOMEPAGE_SECTION_KEYS = {"best_seller", "popular", "secondary", "new_products", "promotions", "advertisements"}
+DEFAULT_HOMEPAGE_SECTIONS = {
+    "best_seller": {"enabled": True, "sort_order": 1, "limit": 8},
+    "popular": {"enabled": True, "sort_order": 2, "limit": 8},
+    "secondary": {"enabled": True, "sort_order": 3, "limit": 8},
+    "new_products": {"enabled": True, "sort_order": 4, "limit": 8},
+    "promotions": {"enabled": True, "sort_order": 5, "limit": 8},
+    "advertisements": {"enabled": False, "sort_order": 6, "limit": 4},
+}
+
+@app.get("/v1/storefront/homepage", tags=["storefront"])
+async def get_storefront_homepage() -> dict[str, Any]:
+    settings_rows = await supabase_get("oto_homepage_settings", {"select":"sections,updated_at","id":"eq.true","limit":"1"})
+    sections = settings_rows[0].get("sections", DEFAULT_HOMEPAGE_SECTIONS) if settings_rows else DEFAULT_HOMEPAGE_SECTIONS
+    if not isinstance(sections, dict): sections = DEFAULT_HOMEPAGE_SECTIONS
+    now = datetime.now(timezone.utc).isoformat()
+    products: dict[str, list[dict[str, Any]]] = {}
+    for key in sorted(HOMEPAGE_SECTION_KEYS, key=lambda k: sections.get(k, {}).get("sort_order", 99) if isinstance(sections.get(k), dict) else 99):
+        cfg = sections.get(key, DEFAULT_HOMEPAGE_SECTIONS[key])
+        if not isinstance(cfg, dict) or not cfg.get("enabled", False): continue
+        limit = max(1, min(int(cfg.get("limit", 8)), 24))
+        if key == "new_products":
+            rows = await supabase_get("products", {"select":"id,sku,slug,name,brand,part_number,category,condition,retail_price,published_at","status":"eq.published","order":"published_at.desc.nullslast","limit":str(limit)})
+        elif key == "secondary":
+            rows = await supabase_get("products", {"select":"id,sku,slug,name,brand,part_number,category,condition,retail_price,published_at","status":"eq.published","condition":"in.(used,refurbished,remanufactured,damaged_for_parts)","order":"published_at.desc.nullslast","limit":str(limit)})
+        elif key == "best_seller":
+            sales = await supabase_get("oto_order_items", {"select":"product_id,quantity,order_id,oto_orders!inner(status)","oto_orders.status":"in.(paid,processing,shipped,delivered)","limit":"5000"})
+            tally: dict[str,int] = {}
+            for sale in sales:
+                pid = str(sale.get("product_id") or "")
+                if pid: tally[pid] = tally.get(pid,0) + int(sale.get("quantity") or 0)
+            ordered = sorted(tally, key=lambda pid: tally[pid], reverse=True)[:limit]
+            rows = await supabase_get("products", {"select":"id,sku,slug,name,brand,part_number,category,condition,retail_price,published_at","status":"eq.published","id":"in.("+",".join(ordered)+")","limit":str(limit)}) if ordered else []
+            rows.sort(key=lambda row: tally.get(str(row.get("id")),0), reverse=True)
+            for row in rows: row["verified_units_sold"] = tally.get(str(row.get("id")),0)
+        elif key == "popular":
+            events = await supabase_get("oto_product_search_events", {"select":"product_id","product_id":"not.is.null","created_at":"gte."+(datetime.now(timezone.utc).replace(day=1,hour=0,minute=0,second=0,microsecond=0)).isoformat(),"limit":"5000"})
+            tally: dict[str,int] = {}
+            for event in events:
+                pid = str(event.get("product_id") or "")
+                if pid: tally[pid] = tally.get(pid,0) + 1
+            ordered = sorted(tally, key=lambda pid:tally[pid], reverse=True)[:limit]
+            rows = await supabase_get("products", {"select":"id,sku,slug,name,brand,part_number,category,condition,retail_price,published_at","status":"eq.published","id":"in.("+",".join(ordered)+")","limit":str(limit)}) if ordered else []
+            rows.sort(key=lambda row:tally.get(str(row.get("id")),0), reverse=True)
+            for row in rows: row["verified_search_events"] = tally.get(str(row.get("id")),0)
+        elif key in {"promotions","advertisements"}:
+            kind = "promotion" if key == "promotions" else "advertisement"
+            campaigns = await supabase_get("oto_homepage_promotions", {"select":"id,title,description,kind,status,starts_at,ends_at,product_ids,target_url,priority","kind":"eq."+kind,"status":"in.(active,scheduled)","or":"(starts_at.is.null,starts_at.lte."+now+")","order":"priority.asc,created_at.desc","limit":str(limit)})
+            campaigns = [c for c in campaigns if (not c.get("starts_at") or c["starts_at"] <= now) and (not c.get("ends_at") or c["ends_at"] > now)]
+            if key == "promotions":
+                ids = list(dict.fromkeys(str(pid) for c in campaigns for pid in c.get("product_ids", [])))
+                rows = await supabase_get("products", {"select":"id,sku,slug,name,brand,part_number,category,condition,retail_price,published_at","status":"eq.published","id":"in.("+",".join(ids)+")","limit":str(limit)}) if ids else []
+            else:
+                rows = campaigns
+            products[key] = rows
+            continue
+        else:
+            rows = []
+        products[key] = rows
+    return {"sections": sections, "items": products, "generated_at": now, "data_policy":"only published products, confirmed sales, recorded search events and active campaigns; no synthetic metrics"}
+
+@app.get("/v1/admin/storefront/homepage", tags=["admin-storefront"])
+async def admin_get_homepage_settings(identity: dict[str, Any] = Depends(require_roles("admin"))) -> dict[str, Any]:
+    settings_rows = await supabase_get("oto_homepage_settings", {"select":"sections,updated_at,updated_by","id":"eq.true","limit":"1"}, access_token=identity["_access_token"])
+    campaigns = await supabase_get("oto_homepage_promotions", {"select":"id,title,description,kind,status,starts_at,ends_at,product_ids,target_url,priority,created_at,updated_at","order":"created_at.desc","limit":"200"}, access_token=identity["_access_token"])
+    return {"sections": settings_rows[0]["sections"] if settings_rows else DEFAULT_HOMEPAGE_SECTIONS, "updated_at": settings_rows[0].get("updated_at") if settings_rows else None, "campaigns": campaigns}
+
+@app.put("/v1/admin/storefront/homepage", tags=["admin-storefront"])
+async def admin_update_homepage_settings(request: HomepageSettingsUpdate = Body(...), identity: dict[str, Any] = Depends(require_roles("admin"))) -> dict[str, Any]:
+    if set(request.sections) != HOMEPAGE_SECTION_KEYS:
+        raise HTTPException(status_code=422, detail="Semua bagian katalog harus dikirim dengan key yang valid.")
+    actor = (identity.get("user") or {}).get("id")
+    sections = {key: cfg.model_dump() for key,cfg in request.sections.items()}
+    rows = await supabase_write("POST", "oto_homepage_settings", identity["_access_token"], {"id":True,"sections":sections,"updated_by":actor,"updated_at":datetime.now(timezone.utc).isoformat()})
+    if not rows:
+        rows = await supabase_write("PATCH", "oto_homepage_settings", identity["_access_token"], {"sections":sections,"updated_by":actor,"updated_at":datetime.now(timezone.utc).isoformat()}, {"id":"eq.true"})
+    return {"sections": sections, "saved": bool(rows)}
+
+@app.post("/v1/admin/storefront/campaigns", tags=["admin-storefront"], status_code=201)
+async def admin_create_homepage_campaign(request: HomepageCampaignCreate = Body(...), identity: dict[str, Any] = Depends(require_roles("admin"))) -> dict[str, Any]:
+    if request.starts_at and request.ends_at and request.ends_at <= request.starts_at:
+        raise HTTPException(status_code=422, detail="Tanggal akhir harus setelah tanggal mulai.")
+    actor = (identity.get("user") or {}).get("id")
+    payload = request.model_dump(mode="json", exclude_none=True)
+    payload.update({"created_by":actor,"updated_by":actor})
+    rows = await supabase_write("POST", "oto_homepage_promotions", identity["_access_token"], payload)
+    if not rows: raise HTTPException(status_code=503, detail="Kampanye tidak dapat disimpan.")
+    return {"campaign": rows[0]}
+
+@app.patch("/v1/admin/storefront/campaigns/{campaign_id}", tags=["admin-storefront"])
+async def admin_update_homepage_campaign(campaign_id: UUID, request: HomepageCampaignCreate = Body(...), identity: dict[str, Any] = Depends(require_roles("admin"))) -> dict[str, Any]:
+    if request.starts_at and request.ends_at and request.ends_at <= request.starts_at:
+        raise HTTPException(status_code=422, detail="Tanggal akhir harus setelah tanggal mulai.")
+    payload = request.model_dump(mode="json", exclude_none=True)
+    payload.update({"updated_by":(identity.get("user") or {}).get("id"),"updated_at":datetime.now(timezone.utc).isoformat()})
+    rows = await supabase_write("PATCH", "oto_homepage_promotions", identity["_access_token"], payload, {"id":"eq."+str(campaign_id)})
+    if not rows: raise HTTPException(status_code=404, detail="Kampanye tidak ditemukan.")
+    return {"campaign": rows[0]}
