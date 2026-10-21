@@ -310,6 +310,127 @@ def safe_search_term(value: str) -> str:
     return re.sub(r"[^\w .\-]", " ", value, flags=re.UNICODE).strip()
 
 
+def normalize_part_number(value: str) -> str:
+    """Normalize OEM/SKU-like identifiers without claiming semantic equivalence."""
+    return re.sub(r"[^A-Z0-9]", "", value.upper())
+
+
+def _score_part_search_candidate(query: str, product: dict[str, Any]) -> tuple[int, list[str]]:
+    """Deterministic retrieval score for ordering candidates; it is not a probability."""
+    needle = normalize_part_number(query)
+    part = normalize_part_number(str(product.get("part_number") or ""))
+    sku = normalize_part_number(str(product.get("sku") or ""))
+    name = normalize_part_number(str(product.get("name") or ""))
+    brand = normalize_part_number(str(product.get("brand") or ""))
+    if not needle:
+        return 0, []
+    if part and needle == part:
+        return 100, ["Nomor part cocok persis setelah normalisasi."]
+    if sku and needle == sku:
+        return 97, ["SKU cocok persis setelah normalisasi."]
+    if name and needle == name:
+        return 90, ["Nama produk cocok persis setelah normalisasi."]
+    if len(needle) >= 4 and part and (part.startswith(needle) or needle.startswith(part)):
+        return 86, ["Nomor part memiliki kecocokan awalan."]
+    if len(needle) >= 4 and part and (needle in part or part in needle):
+        return 78, ["Nomor part memiliki kecocokan sebagian."]
+    if len(needle) >= 4 and sku and (needle in sku or sku in needle):
+        return 72, ["SKU memiliki kecocokan sebagian."]
+    if len(needle) >= 4 and name and needle in name:
+        return 65, ["Nama produk memuat istilah pencarian."]
+    if len(needle) >= 4 and brand and needle in brand:
+        return 55, ["Merek memuat istilah pencarian."]
+    query_tokens = set(re.findall(r"[A-Z0-9]+", query.upper()))
+    searchable_tokens = set(re.findall(
+        r"[A-Z0-9]+",
+        " ".join(str(product.get(key) or "") for key in ("name", "brand", "part_number", "sku")).upper(),
+    ))
+    overlap = query_tokens & searchable_tokens
+    if query_tokens and overlap:
+        ratio = len(overlap) / len(query_tokens)
+        return 35 + round(35 * ratio), [f"{len(overlap)} dari {len(query_tokens)} token pencarian cocok."]
+    return 20, ["Ditemukan melalui pencarian teks; relevansi perlu diperiksa manual."]
+
+
+@app.get("/v1/search/parts", tags=["search"])
+async def search_part_candidates(
+    q: str = Query(min_length=2, max_length=100),
+    limit: int = Query(default=10, ge=1, le=20),
+) -> dict[str, Any]:
+    """Rank only published catalog rows and expose the evidence and uncertainty for each candidate."""
+    normalized_query = normalize_part_number(q)
+    if len(normalized_query) < 2:
+        raise HTTPException(status_code=422, detail="Masukkan minimal dua huruf atau angka yang dapat dicari.")
+    safe_query = safe_search_term(q)
+    variants = list(dict.fromkeys(term for term in (safe_query, normalized_query) if term))
+    clauses: list[str] = []
+    for term in variants:
+        for field in ("part_number", "sku", "name", "brand"):
+            clauses.append(f"{field}.ilike.*{term}*")
+    for token in re.findall(r"[A-Za-z0-9]+", q):
+        if len(token) >= 3:
+            safe_token = safe_search_term(token)
+            if safe_token:
+                for field in ("part_number", "sku", "name", "brand"):
+                    clauses.append(f"{field}.ilike.*{safe_token}*")
+    params = {
+        "select": "id,sku,slug,name,description,brand,part_number,condition,condition_grade,package_quantity,warranty_days,currency,retail_price,fitment_summary,published_at",
+        "status": "eq.published",
+        "or": f"({','.join(dict.fromkeys(clauses))})",
+        "order": "name.asc",
+        "limit": "100",
+    }
+    products = await supabase_get("products", params)
+    product_ids = list(dict.fromkeys(str(row["id"]) for row in products if row.get("id")))
+    fitments_by_product: dict[str, list[dict[str, Any]]] = {product_id: [] for product_id in product_ids}
+    if product_ids:
+        fitment_rows = await supabase_get(
+            "product_fitments",
+            {
+                "select": "product_id,variant_id,status,evidence_url,evidence_note,verified_at,vehicle_variants(id,name,year_start,year_end,engine_code,vehicle_models(id,name,vehicle_makes(id,name)))",
+                "product_id": f"in.({','.join(product_ids)})",
+                "status": "eq.verified",
+                "limit": "500",
+            },
+        )
+        for fitment in fitment_rows:
+            product_id = str(fitment.get("product_id") or "")
+            if product_id in fitments_by_product:
+                fitments_by_product[product_id].append(fitment)
+    ranked: list[dict[str, Any]] = []
+    for product in products:
+        score, reasons = _score_part_search_candidate(q, product)
+        product_id = str(product.get("id") or "")
+        verified_fitments = fitments_by_product.get(product_id, [])
+        uncertainty = ["Skor adalah heuristik pengurutan, bukan probabilitas kecocokan."]
+        if not verified_fitments:
+            uncertainty.append("Tidak ada bukti fitment terverifikasi yang dikembalikan untuk kandidat ini.")
+        if not product.get("condition"):
+            uncertainty.append("Kondisi produk belum tersedia.")
+        uncertainty.append("Stok dan ongkos kirim tidak diverifikasi oleh endpoint pencarian ini.")
+        ranked.append({
+            "product": product,
+            "match_score": score,
+            "match_strength": "exact" if score >= 97 else "strong" if score >= 78 else "partial" if score >= 55 else "weak",
+            "match_reasons": reasons,
+            "verified_fitments": verified_fitments,
+            "uncertainty": uncertainty,
+        })
+    ranked.sort(key=lambda item: (-item["match_score"], str(item["product"].get("name") or "").casefold()))
+    candidates = ranked[:limit]
+    return {
+        "query": q,
+        "normalized_query": normalized_query,
+        "scoring_method": "deterministic_heuristic_not_probability",
+        "items": candidates,
+        "count": len(candidates),
+        "candidate_count_before_limit": len(ranked),
+        "limit": limit,
+        "notice": "Hasil pencarian adalah kandidat. Verifikasi nomor part, kondisi, fitment, stok, dan sumber sebelum membeli atau memublikasikan data.",
+    }
+
+
+
 @app.get("/health", tags=["system"])
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": "otoclinic-api", "environment": settings.environment}
