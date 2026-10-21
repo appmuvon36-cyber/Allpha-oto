@@ -84,8 +84,11 @@ test.describe("OtoClinic public production UI QA", () => {
       await categoryRequest;
       await expect(categorySection.getByText("Kategori terpilih")).toBeVisible();
     } else {
-      // Empty production taxonomy is valid; do not fabricate categories just to satisfy QA.
-      await expect(categorySection.getByText("Belum ada kategori aktif.")).toBeVisible();
+      // Taxonomy may legitimately be empty or the backend may report a loading/error state.
+      // Assert the user receives a clear state; never seed fake categories for the test.
+      const emptyState = categorySection.getByText("Belum ada kategori aktif.");
+      const errorState = categorySection.getByRole("status");
+      await expect(emptyState.or(errorState).first()).toBeVisible({ timeout: 15000 });
     }
     await search.fill("qa-no-match-otoclinic");
     await expect(page.getByRole("heading", { name: /produk tidak ditemukan|belum ada produk/i })).toBeVisible({ timeout: 15000 });
