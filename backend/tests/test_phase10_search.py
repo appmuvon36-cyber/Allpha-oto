@@ -74,6 +74,21 @@ class Phase10PartSearchTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422, response.text)
         get_rows.assert_not_awaited()
 
+    def test_search_excludes_published_row_that_identifies_itself_as_draft(self):
+        row = {
+            "id": "00000000-0000-0000-0000-000000000012",
+            "sku": "OTO-BAT-000008",
+            "name": "Aki Motor GTZ7S",
+            "part_number": "GTZ7S",
+            "condition_grade": "belum diverifikasi",
+            "description": "Kandidat draft; tetap draft sampai bukti tersedia.",
+        }
+        with patch.object(main, "supabase_get", new_callable=AsyncMock, return_value=[row]) as get_rows:
+            response = self.client.get("/v1/search/parts", params={"q": "GTZ7S"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["items"], [])
+        get_rows.assert_awaited_once()
+
     def test_search_empty_catalog_returns_empty_not_mock_candidates(self):
         with patch.object(main, "supabase_get", new_callable=AsyncMock, return_value=[]) as get_rows:
             response = self.client.get("/v1/search/parts", params={"q": "shock"})
