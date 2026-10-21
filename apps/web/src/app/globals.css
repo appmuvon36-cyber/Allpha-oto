@@ -441,3 +441,28 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .store-home > #permintaan { order:8; }
 .store-home > footer { order:9; }
 .store-home > .store-bottom-nav { order:10; }
+
+/* Correct storefront category density and match reference hero proportions. */
+.store-home .store-promo-banner { min-height:0 !important; height:clamp(300px, 40vw, 430px); padding:clamp(22px,4vw,44px) !important; display:flex; align-items:center; }
+.store-home .store-promo-banner > .relative.grid { width:100%; max-width:100%; grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr); align-items:center; gap:clamp(14px,3vw,32px); }
+.store-home .store-promo-banner .store-promo-copy { max-width:100%; }
+.store-home .store-promo-banner > img.store-promo-photo { width:55%; height:100%; object-fit:cover; right:0; left:auto; opacity:.78; }
+.store-home .store-promo-banner::after { background:linear-gradient(90deg,#101b2b 0%,rgba(16,27,43,.98) 38%,rgba(16,27,43,.68) 65%,rgba(16,27,43,.12) 100%) !important; }
+.store-home .store-category-grid { grid-template-columns:repeat(4,minmax(0,1fr)) !important; }
+.store-home .store-category-tile { min-height:112px !important; height:112px; padding:10px 7px !important; align-items:center !important; gap:0; }
+.store-home .store-category-tile > span:first-child { width:52px !important;height:52px !important; margin:0 0 8px !important; border-radius:17px !important; flex-shrink:0; }
+.store-home .store-category-tile .category-tile-name { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere; font-size:12px; font-weight:750; line-height:1.25; text-align:center; }
+.store-category-modal { overscroll-behavior:contain; }
+@media(max-width:639px) {
+ .store-home .store-promo-banner { height:clamp(340px,108vw,430px) !important; min-height:340px !important; padding:22px !important; }
+ .store-home .store-promo-banner > .relative.grid { display:block !important; max-width:100% !important; }
+ .store-home .store-promo-banner .store-promo-copy { position:relative; z-index:2; max-width:76%; }
+ .store-home .store-promo-banner .store-promo-copy h2 { font-size:clamp(1.45rem,5.6vw,1.8rem) !important; line-height:1.18 !important; }
+ .store-home .store-promo-banner .store-promo-copy p { font-size:.88rem !important; line-height:1.5 !important; }
+ .store-home .store-promo-banner > img.store-promo-photo { width:76% !important; height:100% !important; opacity:.72 !important; }
+ .store-home .store-promo-banner::after { background:linear-gradient(90deg,#101b2b 0%,rgba(16,27,43,.96) 44%,rgba(16,27,43,.62) 72%,rgba(16,27,43,.25) 100%) !important; }
+ .store-home .store-category-grid { gap:8px !important; }
+ .store-home .store-category-tile { height:112px !important; min-height:112px !important; border-radius:20px !important; }
+ .store-home .store-category-tile > span:first-child { width:48px !important;height:48px !important; }
+ .store-home .store-category-tile .category-tile-name { font-size:11px; }
+}
