@@ -187,10 +187,10 @@ Phase 05–09 and EC-01 through EC-09 provide the commerce primitives. On 21 Oct
 These are product-pattern references, not evidence that OtoClinic has those provider integrations enabled. Copy the useful workflow patterns, not another vendor's UI or backend.
 
 ## Phase 10 — AI and Search Intelligence (IN PROGRESS)
-- Added public read-only `GET /v1/search/parts?q=...&limit=...` backed by the existing Supabase catalog through FastAPI; only `published` products are eligible, and only `verified` fitment records are returned as fitment evidence.
+- Added public read-only `GET /v1/search/parts?q=...&limit=...` backed by the existing Supabase catalog through FastAPI; the database query restricts to `published` products, and an additional trust guard excludes rows whose own metadata explicitly labels them draft or unverified. Only `verified` fitment records are returned as fitment evidence.
 - Normalizes part identifiers by removing formatting punctuation and uppercasing; ranks candidates deterministically using exact part number/SKU, partial identifier, name/brand and token overlap. `match_score` is explicitly a heuristic ordering score, not a probability or a guarantee of vehicle compatibility.
 - Each candidate returns match reasons, verified fitment evidence, uncertainty notices, and a warning that stock/shipping are not verified by this endpoint. Empty catalog responses remain empty; no sample or mock products are generated.
-- Initial automated coverage is in `backend/tests/test_phase10_search.py` for normalization, ranking, published-only query filters, verified-only fitment evidence, invalid query handling, and empty-catalog behavior. CI results and the exact-code Railway deployment are pending this Phase 10 commit.
+- Automated coverage is in `backend/tests/test_phase10_search.py` for normalization, ranking, published-only query filters, verified-only fitment evidence, invalid query handling, empty-catalog behavior, and suppression of a published row whose own description/condition metadata says it is a draft. The Phase 10 CI run is in progress; exact-code Railway deployment verification is pending.
 
 
 ## Phase 11 — Integrations (NOT IMPLEMENTED; PROVIDERS/SECRETS UNCONFIRMED)
