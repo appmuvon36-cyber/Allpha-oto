@@ -3,7 +3,7 @@
 **Scope:** OtoClinic commerce transaction integrity and security acceptance.  
 **Repository:** `appmuvon36-cyber/Allpha-oto`, branch `main`.  
 **Database:** Existing Supabase project only; synthetic test identities/rows are created exclusively by the disposable CI PostgreSQL fixture.  
-**Status:** Acceptance coverage implemented; closure is conditional on the CI run and deployment evidence below. External-provider checks are explicitly configuration-gated.
+**Status:** CI acceptance coverage passed on source commit `e9aa7dac08e33e49217d2673dab4d9c588df7fe4`; the additive payment replay guard is applied to the existing Supabase production project. Railway application deployment is still blocked because Railway returned “Deploys have been paused temporarily” when a same-repository/main source refresh was requested. External-provider checks are explicitly configuration-gated.
 
 ## Acceptance matrix
 
@@ -22,12 +22,13 @@
 | RLS | EC-09/EC-08 SQL assertions | RLS remains enabled on commerce/payment/integration tables; privileged operations use guarded RPCs | Disposable-DB assertions |
 | WhatsApp provider delivery | Railway configuration inventory | Cloud API token, phone-number ID, Graph API version, approved template, webhook verify token, Meta app secret and worker secret are required | **BLOCKED** until configured |
 | Authenticated production customer/staff journey | Approved test accounts and safe test order/payment path | Run customer checkout and authorized staff workflows without production test contamination | **DEFERRED** to Phase 12 / approved test identity |
-| Production release | GitHub CI, Railway deployment, fresh HTTP smoke | Record exact commit, run IDs, deployment IDs, HTTP results and rollback target | Fill from actual run/deployment results; never infer from code alone |
+| Production release | [OtoClinic CI run 39533170595](https://github.com/appmuvon36-cyber/Allpha-oto/actions/runs/39533170595) on `e9aa7dac08e33e49217d2673dab4d9c588df7fe4`; fresh API health smoke returned HTTP 200 before the source refresh attempt | Isolated API/DB acceptance and web lint/typecheck/build passed; production API source refresh was attempted but Railway paused deployments | **Code/DB checks passed; API deployment pending.** Current Railway API deployment `c395881e-3eb6-4f12-92df-681cd69f2fee` still reports commit `573088ae2d4211348550d32f4b1de87def17bc55`. |
 
 ## Change and rollback notes
 
-- Additive migration: `supabase/migrations/20261021020500_ec09_payment_webhook_replay_guards.sql`.
+- Additive migration: `supabase/migrations/20261021022911_ec09_payment_webhook_replay_guards.sql`.
 - The migration replaces the existing `oto_payment_webhook_apply` function, preserves service-role-only execution, and does not delete, truncate, or rewrite existing commerce rows.
 - Rollback must be a reviewed forward migration restoring the previous function definition if needed; do not drop payment webhook events or roll back the migration ledger. The prior definition is preserved in Git history at the parent commit.
+- Live Supabase verification after applying the migration: `payment_webhook_event_payload_conflict` guard is present; `service_role` can execute the RPC; `authenticated` cannot. Production counts remained `oto_orders=0`, `oto_payment_intents=0`, `oto_payment_webhook_events=0`, and `oto_returns=0`.
 - Production data was not seeded with acceptance orders, payment intents, refunds, webhook events, or fake catalog rows.
 - CI passing proves only the listed isolated checks. It does not prove external provider delivery or an authenticated live production transaction.

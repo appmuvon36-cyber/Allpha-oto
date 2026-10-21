@@ -169,7 +169,7 @@ jobs:
       - name: Verify EC-08 RLS, grants, indexes and guarded functions
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/ec08_db_assertions.sql
       - name: Apply EC-09 payment webhook replay guards
-        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261021020500_ec09_payment_webhook_replay_guards.sql
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261021022911_ec09_payment_webhook_replay_guards.sql
       - name: Verify EC-09 payment replay, payload conflict, amount and grants
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/ec09_acceptance_assertions.sql
       - name: Prepare isolated EC-09 stock concurrency fixture
