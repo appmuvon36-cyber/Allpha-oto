@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Boxes, CreditCard, RefreshCw, RotateCcw, Truck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Boxes, CreditCard, RefreshCw, RotateCcw, Truck } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://otoclinic-api-production.up.railway.app";
@@ -10,7 +10,7 @@ type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string
 type Row = { [key: string]: JsonValue };
 const asRow = (value: unknown): Row => typeof value === "object" && value !== null && !Array.isArray(value) ? value as Row : {};
 const asText = (value: unknown, fallback = "—") => typeof value === "string" || typeof value === "number" ? String(value) : fallback;
-type Tab = "inventory" | "orders" | "fulfillment" | "payments" | "returns";
+type Tab = "inventory" | "orders" | "fulfillment" | "exceptions" | "payments" | "returns";
 
 const money = (value: unknown) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(Number(value ?? 0));
 const handoffLabel: Record<string, string> = { not_started: "Belum diminta", prepared: "Menunggu tindak lanjut", confirmed: "Dikonfirmasi staf", declined: "Ditolak staf", expired: "Kedaluwarsa" };
@@ -173,7 +173,7 @@ export default function InventoryOrdersPage() {
 
   const tabs: { id: Tab; name: string; icon: typeof Boxes }[] = [
     { id: "inventory", name: "Inventori", icon: Boxes }, { id: "orders", name: "Pesanan", icon: Truck },
-    { id: "fulfillment", name: "Pengiriman", icon: Truck }, { id: "payments", name: "Pembayaran", icon: CreditCard }, { id: "returns", name: "Retur & Refund", icon: RotateCcw },
+    { id: "fulfillment", name: "Pengiriman", icon: Truck }, { id: "exceptions", name: "Kendala", icon: AlertTriangle }, { id: "payments", name: "Pembayaran", icon: CreditCard }, { id: "returns", name: "Retur & Refund", icon: RotateCcw },
   ];
 
   return <main className="min-h-screen bg-slate-50 text-slate-900">
@@ -233,6 +233,15 @@ export default function InventoryOrdersPage() {
         </div></div>
         <div className="overflow-hidden rounded-2xl border bg-white"><div className="border-b p-4"><h3 className="font-semibold">Antrean pengiriman</h3></div>
         {orders.filter(o=>["paid","processing","shipped"].includes(asText(o.status))).length===0?<p className="p-6 text-sm text-slate-500">Tidak ada pesanan yang menunggu fulfillment.</p>:<div className="divide-y">{orders.filter(o=>["paid","processing","shipped"].includes(asText(o.status))).map(o=><article key={asText(o.id)} className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between"><div><p className="font-semibold">{asText(o.id)}</p><p className="text-sm text-slate-600">{label[asText(o.status)]??asText(o.status)} · {money(o.total_amount)}</p><p className="text-sm text-slate-500">{asText(o.shipping_carrier,"Kurir belum dicatat")} · {asText(o.shipping_service,"Layanan belum dicatat")} · Resi {asText(o.tracking_code,"belum tersedia")}</p>{o.shipping_exception_note&&<p className="mt-1 text-sm text-amber-700">Kendala: {asText(o.shipping_exception_code)} — {asText(o.shipping_exception_note)}</p>}</div><button onClick={()=>setFulfillmentOrder(asText(o.id))} className="rounded-lg border px-3 py-2 text-sm">Kelola pengiriman</button></article>)}</div>}</div>
+      </section>}
+      {tab === "exceptions" && <section className="overflow-hidden rounded-2xl border bg-white">
+        <div className="border-b p-4"><h2 className="font-semibold">Antrean kendala pengiriman</h2><p className="text-sm text-slate-500">Daftar ini hanya memakai catatan kendala yang dikembalikan API pesanan. Tidak ada kendala atau pesanan contoh yang dibuat.</p></div>
+        {orders.filter(o => Boolean(o.shipping_exception_code || o.shipping_exception_note)).length === 0
+          ? <p className="p-8 text-sm text-slate-500">Tidak ada kendala pengiriman yang tercatat pada pesanan yang berhasil dimuat.</p>
+          : <div className="divide-y">{orders.filter(o => Boolean(o.shipping_exception_code || o.shipping_exception_note)).map(o => <article key={asText(o.id)} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0"><p className="break-all font-semibold">{asText(o.id)}</p><p className="mt-1 text-sm text-slate-600">{label[asText(o.status, "")] ?? asText(o.status)} · {money(o.total_amount)}</p><p className="mt-2 text-sm font-medium text-amber-800">{asText(o.shipping_exception_code, "KODE KENDALA TIDAK TERSEDIA")}</p><p className="text-sm text-slate-700">{asText(o.shipping_exception_note, "Catatan kendala belum tersedia.")}</p><p className="mt-1 text-xs text-slate-500">Pembaruan terakhir: {o.shipping_last_event_at ? new Date(String(o.shipping_last_event_at)).toLocaleString("id-ID") : "belum tercatat"}</p></div>
+            <button onClick={() => { setFulfillmentOrder(asText(o.id)); setTab("fulfillment"); }} className="shrink-0 rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50">Kelola kendala</button>
+          </article>)}</div>}
       </section>}
       {tab === "payments" && <section className="overflow-hidden rounded-2xl border bg-white"><div className="border-b p-4"><h2 className="font-semibold">Verifikasi pembayaran</h2><p className="text-sm text-slate-500">Bukti transfer hanya bukti pengajuan. Verifikasi harus dilakukan personel berwenang.</p></div>
           {payments.length===0?<p className="p-8 text-sm text-slate-500">Tidak ada pembayaran menunggu review.</p>:<div className="divide-y">{payments.map(p=><article key={asText(p.id)} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="font-semibold">Order {asText(p.order_id)}</p><p className="text-sm text-slate-500">Bukti: {asText(p.evidence_reference)} · {new Date(String(p.created_at)).toLocaleString("id-ID")}</p><p className="font-semibold">{money(p.amount)}</p></div><div className="flex flex-wrap gap-2"><button onClick={()=>{const ref=window.prompt("Nomor referensi bank/provider atau catatan verifikasi wajib");if(ref?.trim())void mutate("/v1/admin/orders/"+asText(p.order_id)+"/mutations","verify_payment",{payment_event_id:p.id,provider_reference:ref.trim()})}} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Verifikasi</button><button onClick={()=>{const reason=window.prompt("Alasan penolakan pembayaran");if(reason?.trim())void mutate("/v1/admin/orders/"+asText(p.order_id)+"/mutations","reject_payment",{payment_event_id:p.id,reason:reason.trim()})}} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700">Tolak</button></div></article>)}</div>}
