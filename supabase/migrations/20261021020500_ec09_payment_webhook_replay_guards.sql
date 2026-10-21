@@ -7,7 +7,7 @@ create or replace function public.oto_payment_webhook_apply(
 as $function$
 declare pi public.oto_payment_intents%rowtype; o public.oto_orders%rowtype; ev public.oto_payment_webhook_events%rowtype;
 begin
- if coalesce(auth.jwt()->>'role',auth.role(),'')<>'service_role' then
+ if coalesce(auth.jwt()->>'role',current_setting('request.jwt.claim.role',true),'')<>'service_role' then
   raise exception using errcode='42501',message='service_role_required';
  end if;
  if p_provider not in ('midtrans','rajaongkir') or p_event_key is null or length(p_event_key)<1 or length(p_event_key)>200
