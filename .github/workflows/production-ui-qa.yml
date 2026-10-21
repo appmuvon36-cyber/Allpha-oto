@@ -33,9 +33,9 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run read-only production browser QA
         env:
-          OTOCLINIC_WEB_URL: https://otoclinic-web-production.up.railway.app
-          OTOCLINIC_ADMIN_URL: https://otoclinic-admin-production.up.railway.app
-          OTOCLINIC_API_URL: https://otoclinic-api-production.up.railway.app
+          OTOCLINIC_WEB_URL: https://allpha-oto.vercel.app
+          OTOCLINIC_ADMIN_URL: https://otoclinic-admin.vercel.app
+          OTOCLINIC_API_URL: https://otoclinic-api.vercel.app
         run: npx playwright test scripts/qa/production-ui.spec.cjs --reporter=list
       - name: Upload viewport screenshots and Playwright report
         if: always()
