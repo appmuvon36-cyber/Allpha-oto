@@ -162,6 +162,34 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261021015723_ec08_monotonic_delivery_status.sql
       - name: Verify EC-08 RLS, grants, indexes and guarded functions
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/ec08_db_assertions.sql
+      - name: Apply EC-09 payment webhook replay guards
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261021020500_ec09_payment_webhook_replay_guards.sql
+      - name: Verify EC-09 payment replay, payload conflict, amount and grants
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/ec09_acceptance_assertions.sql
+      - name: Prepare isolated EC-09 stock concurrency fixture
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/ec09_concurrency_setup.sql
+      - name: Race two checkout transactions against five units of stock
+        shell: bash
+        run: |
+          set +e
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/ec09_concurrent_checkout_a.sql > /tmp/ec09-checkout-a.log 2>&1 &
+          pid_a=$!
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/ec09_concurrent_checkout_b.sql > /tmp/ec09-checkout-b.log 2>&1 &
+          pid_b=$!
+          wait "$pid_a"; status_a=$?
+          wait "$pid_b"; status_b=$?
+          set -e
+          if [ "$status_a" -eq 0 ] && [ "$status_b" -eq 0 ]; then
+            cat /tmp/ec09-checkout-a.log /tmp/ec09-checkout-b.log
+            echo "Both concurrent checkouts succeeded against five units; oversell guard failed."
+            exit 1
+          fi
+          if [ "$status_a" -ne 0 ] && [ "$status_b" -ne 0 ]; then
+            cat /tmp/ec09-checkout-a.log /tmp/ec09-checkout-b.log
+            echo "Both concurrent checkouts failed; expected exactly one successful reservation."
+            exit 1
+          fi
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/ec09_concurrency_assertions.sql
       - name: Apply unknown-condition draft support
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../supabase/migrations/20261019170000_catalog_unknown_condition_draft.sql

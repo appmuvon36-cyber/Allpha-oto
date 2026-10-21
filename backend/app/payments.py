@@ -329,6 +329,8 @@ async def rajaongkir_webhook(request: Request) -> dict[str, Any]:
     amount_raw = _field(data, "amount", "gross_amount", "total_amount")
     if not provider_order_id or not raw_status:
         raise HTTPException(status_code=422, detail="Callback is missing order_id or payment status.")
+    if len(str(provider_order_id)) > 180:
+        raise HTTPException(status_code=422, detail="Callback provider order ID is too long.")
     status = _normalized_status(raw_status)
     amount = None
     if amount_raw is not None:
@@ -340,7 +342,7 @@ async def rajaongkir_webhook(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="Paid callback must include an amount.")
     digest = hashlib.sha256(raw_body).hexdigest()
     explicit_event_id = _field(data, "event_id", "callback_id", "notification_id")
-    event_key = f"provider-event:{str(explicit_event_id)[:200]}" if explicit_event_id else f"callback:{hashlib.sha256((str(provider_order_id) + '|' + str(payment_id or '') + '|' + status + '|' + digest).encode()).hexdigest()}"
+    event_key = f"provider-event:{str(explicit_event_id)[:180]}" if explicit_event_id else f"callback:{hashlib.sha256((str(provider_order_id) + '|' + str(payment_id or '') + '|' + status + '|' + digest).encode()).hexdigest()}"
     await _apply_verified_status(event_key, str(provider_order_id), str(payment_id) if payment_id else None, status, amount, digest)
     return {"received": True, "correlation_id": correlation_id}
 
