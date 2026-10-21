@@ -23,6 +23,7 @@ export default function HomePage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories,setCategories]=useState<Category[]>([]);
   const [categoryError,setCategoryError]=useState("");
+  const [categoriesLoading,setCategoriesLoading]=useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [makes,setMakes]=useState<Make[]>([]); const [models,setModels]=useState<Model[]>([]); const [variants,setVariants]=useState<Variant[]>([]);
@@ -41,11 +42,32 @@ export default function HomePage() {
   const [requestNotice,setRequestNotice]=useState<{kind:"success"|"error";text:string}|null>(null);
   const requestKey=useRef("");
   const selectedCategoryItem=categories.find(item=>item.id===selectedCategory);
-  const selectedCategoryChildren=categories.filter(item=>item.parent_id===selectedCategory);
+  const selectedCategoryChildren=categories.filter(item=>item.parent_id===selectedCategory)
+    .slice().sort((a,b)=>(a.sort_order??0)-(b.sort_order??0)||a.name.localeCompare(b.name,"id"));
+  const categoryPath=(item:Category)=>{
+    const path:Category[]=[item];
+    let parentId=item.parent_id;
+    while(parentId){
+      const parent=categories.find(candidate=>candidate.id===parentId);
+      if(!parent||path.some(entry=>entry.id===parent.id))break;
+      path.unshift(parent);
+      parentId=parent.parent_id;
+    }
+    return path.map(entry=>entry.name).join(" / ");
+  };
 
   useEffect(() => {
     let active=true;
-    fetch(API+"/v1/catalog/categories").then(r=>{if(!r.ok)throw new Error();return r.json()}).then(d=>{if(active){setCategories(d.items??[]);setCategoryError("");}}).catch(()=>{if(active){setCategories([]);setCategoryError("Kategori belum dapat dimuat dari master katalog.");}});
+    fetch(API+"/v1/catalog/categories")
+      .then(r=>{if(!r.ok)throw new Error("category_request_failed");return r.json()})
+      .then(d=>{
+        if(!active)return;
+        const items=Array.isArray(d.items)?d.items:[];
+        setCategories(items.slice().sort((a,b)=>(a.sort_order??0)-(b.sort_order??0)||a.name.localeCompare(b.name,"id")));
+        setCategoryError("");
+      })
+      .catch(()=>{if(active){setCategories([]);setCategoryError("Kategori gagal dimuat dari backend. Periksa koneksi lalu coba lagi.");}})
+      .finally(()=>{if(active)setCategoriesLoading(false)});
     return ()=>{active=false};
   },[]);
 
@@ -197,7 +219,7 @@ export default function HomePage() {
     </section>
     <section id="kategori" className="mx-auto max-w-7xl px-4 pt-7 sm:px-6 sm:pt-10">
       <div className="flex items-end justify-between gap-3"><div><p className="text-[11px] font-extrabold uppercase tracking-[.16em] text-[var(--color-primary)]">Kategori spare part</p><h2 className="mt-1 text-xl font-extrabold tracking-tight sm:text-2xl">Belanja berdasarkan kategori</h2></div><span className="hidden text-xs text-slate-500 sm:block">Pilih kategori untuk mencari katalog</span></div>
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 sm:gap-3">{categories.filter(item=>!item.parent_id).map((item,index)=><button key={item.id} type="button" aria-pressed={selectedCategory===item.id} onClick={()=>{setSelectedCategory(selectedCategory===item.id?"":item.id);setQuery("");document.getElementById("katalog")?.scrollIntoView({behavior:"smooth"});}} className={"store-category-tile flex min-h-[94px] flex-col items-start justify-center rounded-2xl border p-3 text-left transition sm:min-h-[112px] sm:p-4 "+(selectedCategory===item.id?"border-orange-400 bg-orange-50":"border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/50")}><span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-xl bg-orange-50 text-lg text-[var(--color-primary)] sm:h-11 sm:w-11 sm:text-xl">{["⚙","◉","ϟ","▧","◈","▤"][index%6]}</span><span className="mt-2 text-xs font-extrabold sm:text-sm">{item.name}</span><span className="mt-1 text-[10px] text-slate-500">{item.vehicle_scope==="all"?"Semua kendaraan":item.vehicle_scope==="motorcycle"?"Motor":item.vehicle_scope==="car"?"Mobil":"Komersial"}</span></button>)}</div>{selectedCategoryItem&&<div className="mt-3 rounded-2xl border border-orange-200 bg-orange-50/60 p-3 sm:p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-[10px] font-extrabold uppercase tracking-wider text-orange-700">Kategori terpilih</p><h3 className="mt-1 text-sm font-extrabold">{selectedCategoryItem.name}</h3><p className="mt-1 text-xs text-slate-600">Filter mencakup subkategori aktif di bawah kategori ini.</p></div><button type="button" onClick={()=>setSelectedCategory("")} className="rounded-lg border border-orange-300 bg-white px-3 py-2 text-xs font-bold text-orange-800">Hapus kategori</button></div>{selectedCategoryChildren.length>0&&<div className="mt-3 flex flex-wrap gap-2">{selectedCategoryChildren.map(child=><button key={child.id} type="button" aria-pressed={selectedCategory===child.id} onClick={()=>{setSelectedCategory(child.id);document.getElementById("katalog")?.scrollIntoView({behavior:"smooth"});}} className={"rounded-full border px-3 py-2 text-xs font-bold "+(selectedCategory===child.id?"border-orange-500 bg-orange-600 text-white":"border-orange-200 bg-white text-slate-700")}>{child.name}</button>)}</div>}</div>}{categoryError&&<p role="status" className="mt-3 text-xs text-amber-700">{categoryError}</p>}{!categoryError&&categories.length===0&&<p className="mt-3 text-sm text-slate-500">Belum ada kategori aktif.</p>}
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 sm:gap-3">{categories.filter(item=>!item.parent_id).map((item,index)=><button key={item.id} type="button" aria-pressed={selectedCategory===item.id} onClick={()=>{setSelectedCategory(selectedCategory===item.id?"":item.id);setQuery("");document.getElementById("katalog")?.scrollIntoView({behavior:"smooth"});}} className={"store-category-tile flex min-h-[112px] min-w-0 flex-col items-start justify-center rounded-2xl border p-3 text-left transition sm:p-4 "+(selectedCategory===item.id?"border-orange-400 bg-orange-50":"border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/50")}><span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-xl bg-orange-50 text-lg text-[var(--color-primary)] sm:h-11 sm:w-11 sm:text-xl">{["⚙","◉","ϟ","▧","◈","▤"][index%6]}</span><span className="mt-2 text-xs font-extrabold sm:text-sm">{item.name}</span><span className="mt-1 text-[10px] text-slate-500">{item.vehicle_scope==="all"?"Semua kendaraan":item.vehicle_scope==="motorcycle"?"Motor":item.vehicle_scope==="car"?"Mobil":"Komersial"}</span><span className="mt-1 break-all text-[9px] leading-4 text-slate-500">ID: {item.id}</span><span className="text-[9px] text-slate-500">Urutan: {item.sort_order}</span></button>)}</div>{selectedCategoryItem&&<div className="mt-3 rounded-2xl border border-orange-200 bg-orange-50/60 p-3 sm:p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="text-[10px] font-extrabold uppercase tracking-wider text-orange-700">Hierarki kategori terpilih</p><h3 className="mt-1 break-words text-sm font-extrabold">{categoryPath(selectedCategoryItem)}</h3><p className="mt-1 break-all text-[10px] text-slate-600">ID: {selectedCategoryItem.id} · Urutan: {selectedCategoryItem.sort_order}</p><p className="mt-1 text-xs text-slate-600">Pilih kategori atau subkategori untuk memfilter katalog menggunakan ID dari backend.</p></div><button type="button" onClick={()=>setSelectedCategory("")} className="rounded-lg border border-orange-300 bg-white px-3 py-2 text-xs font-bold text-orange-800">Hapus kategori</button></div>{selectedCategoryChildren.length>0&&<div className="mt-3 flex flex-wrap gap-2">{selectedCategoryChildren.map(child=><button key={child.id} type="button" aria-pressed={selectedCategory===child.id} onClick={()=>{setSelectedCategory(child.id);document.getElementById("katalog")?.scrollIntoView({behavior:"smooth"});}} className={"min-w-0 rounded-xl border px-3 py-2 text-left text-xs font-bold "+(selectedCategory===child.id?"border-orange-500 bg-orange-600 text-white":"border-orange-200 bg-white text-slate-700")}><span className="block">{child.name}</span><span className="mt-1 block break-all text-[9px] font-normal">ID: {child.id} · Urutan: {child.sort_order}</span></button>)}</div>}</div>}{categoriesLoading&&<p role="status" className="mt-3 text-xs text-slate-500">Memuat kategori dari katalog…</p>}{categoryError&&<p role="alert" className="mt-3 text-xs text-amber-700">{categoryError}</p>}{!categoriesLoading&&!categoryError&&categories.length===0&&<p role="status" className="mt-3 text-sm text-slate-500">Belum ada kategori aktif di master katalog.</p>}
     </section>
     <section id="katalog" className="mx-auto max-w-7xl px-4 py-7 sm:px-6 sm:py-10">
       {selectedCategoryItem&&<div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs"><span className="font-bold">Kategori: {selectedCategoryItem.name}</span><button type="button" onClick={()=>setSelectedCategory("")} className="rounded-full border border-orange-300 bg-white px-3 py-1 font-bold text-[var(--color-primary)]">Hapus filter</button></div>}
