@@ -468,17 +468,37 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 
 
-/* Reference-driven mobile layout: prevent intrinsic flex children from widening the viewport. */
+/* Reference-driven mobile layout: constrain the root and every intrinsic-width child. */
+.store-home {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
 @media (max-width: 767px) {
+  .store-home {
+    width: 100vw;
+    max-width: 100vw;
+    overflow-x: clip;
+  }
+  .store-home > #pencarian-sparepart,
   .store-home > #kendaraan-aktif,
   .store-home > #kategori,
   .store-home > #katalog,
   .store-home > #permintaan,
-  .store-home > section[aria-label="Hero OtoClinic"] {
+  .store-home > section[aria-label="Hero OtoClinic"],
+  .store-home > section[aria-label="best_seller"],
+  .store-home > section[aria-label="popular"],
+  .store-home > section[aria-label="secondary"],
+  .store-home > section[aria-label="new_products"],
+  .store-home > section[aria-label="promotions"],
+  .store-home > section[aria-label="advertisements"] {
     box-sizing: border-box;
     width: 100%;
     max-width: 100%;
     min-width: 0;
+    margin-left: 0;
+    margin-right: 0;
     overflow-x: clip;
   }
   #kendaraan-aktif > button {
@@ -495,23 +515,4 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     max-width: 100%;
     transform: none;
   }
-}
-
-
-/* Keep the DOM sequence aligned with the reference's mobile-first shopping journey. */
-@media (max-width: 767px) {
-  .store-home > #pencarian-sparepart { order: 1; }
-  .store-home > section[aria-label="Hero OtoClinic"] { order: 2; }
-  .store-home > #kendaraan-aktif { order: 3; }
-  .store-home > #kategori { order: 4; }
-  .store-home > section[aria-label="best_seller"],
-  .store-home > section[aria-label="popular"],
-  .store-home > section[aria-label="secondary"],
-  .store-home > section[aria-label="new_products"],
-  .store-home > section[aria-label="promotions"],
-  .store-home > section[aria-label="advertisements"] { order: 5; }
-  .store-home > #katalog { order: 6; }
-  .store-home > #cara-kerja { order: 7; }
-  .store-home > #permintaan { order: 8; }
-  .store-home > footer { order: 9; }
 }
